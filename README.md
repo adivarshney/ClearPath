@@ -9,6 +9,9 @@ A simple web-based environmental compliance tracker for consultants handling app
 - Per-project compliance tracker with due dates and manual status updates
 - Document uploads for each compliance item
 - Dashboard with total projects, pending items, and completed items
+- CSV/XLSX import for compliance trackers
+- Edit/delete flows for projects and compliance items
+- Upcoming and overdue reminder sections
 
 ## Run locally
 
@@ -27,3 +30,12 @@ A simple web-based environmental compliance tracker for consultants handling app
 3. Open [http://127.0.0.1:5000](http://127.0.0.1:5000)
 
 Uploaded files and the SQLite database are stored under `instance/`.
+
+## Import format
+
+The compliance import accepts `.csv` and `.xlsx` files with these columns:
+
+- `Condition Description`
+- `Action To Be Taken`
+- `Due Date`
+- `Status` (optional, defaults to `Pending`)

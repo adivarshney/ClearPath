@@ -6,38 +6,38 @@
 <section class="page-header">
   <div>
     <span class="eyebrow">Project Setup</span>
-    <h1>Create a project</h1>
-    <p class="muted">Capture the core details and approval categories for this compliance workspace.</p>
+    <h1>{{ form_title }}</h1>
+    <p class="muted">{{ form_copy }}</p>
   </div>
 </section>
 
 <section class="panel form-panel">
-  <form method="post" class="stack-form">
+  <form method="post" action="{{ form_action }}" class="stack-form">
     <label>
       <span>Project name</span>
-      <input type="text" name="name" required />
+      <input type="text" name="name" value="{{ request.form.get('name', project['name'] if project else '') }}" required />
     </label>
 
     <label>
       <span>Client name</span>
-      <input type="text" name="client_name" required />
+      <input type="text" name="client_name" value="{{ request.form.get('client_name', project['client_name'] if project else '') }}" required />
     </label>
 
     <label>
       <span>Location</span>
-      <input type="text" name="location" required />
+      <input type="text" name="location" value="{{ request.form.get('location', project['location'] if project else '') }}" required />
     </label>
 
     <label>
       <span>Approvals</span>
       <select name="approval_types" multiple size="3" required>
         {% for approval in approval_types %}
-        <option value="{{ approval }}">{{ approval }}</option>
+        <option value="{{ approval }}" {% if approval in selected_approvals %}selected{% endif %}>{{ approval }}</option>
         {% endfor %}
       </select>
     </label>
 
-    <button type="submit">Save Project</button>
+    <button type="submit">{{ submit_label }}</button>
   </form>
 </section>
 {% endblock %}

@@ -9,10 +9,18 @@
     <h1>{{ project["name"] }}</h1>
     <p class="muted">{{ project["client_name"] }} • {{ project["location"] }}</p>
   </div>
-  <div class="pill-group">
-    {% for approval in approvals %}
-    <span class="pill">{{ approval }}</span>
-    {% endfor %}
+  <div class="header-actions">
+    <div class="pill-group">
+      {% for approval in approvals %}
+      <span class="pill">{{ approval }}</span>
+      {% endfor %}
+    </div>
+    <div class="action-row">
+      <a class="secondary-button button-link" href="{{ url_for('edit_project', project_id=project['id']) }}">Edit Project</a>
+      <form method="post" action="{{ url_for('delete_project', project_id=project['id']) }}" onsubmit="return confirm('Delete this project and all linked compliance data?');">
+        <button type="submit" class="danger-button">Delete Project</button>
+      </form>
+    </div>
   </div>
 </section>
 
@@ -56,29 +64,80 @@
   <article class="panel">
     <div class="panel-header">
       <div>
-        <h2>Project summary</h2>
-        <p class="muted">A compact view of the project’s compliance scope.</p>
+        <h2>Import tracker</h2>
+        <p class="muted">Bring in existing CSV or Excel trackers with standard columns.</p>
       </div>
     </div>
 
-    <div class="summary-list">
-      <div>
-        <span>Client</span>
-        <strong>{{ project["client_name"] }}</strong>
-      </div>
-      <div>
-        <span>Location</span>
-        <strong>{{ project["location"] }}</strong>
-      </div>
-      <div>
-        <span>Approvals</span>
-        <strong>{{ approvals|join(", ") }}</strong>
-      </div>
+    <form method="post" action="{{ url_for('import_compliance_items', project_id=project['id']) }}" enctype="multipart/form-data" class="stack-form">
+      <label>
+        <span>Import file</span>
+        <input type="file" name="import_file" accept=".csv,.xlsx" required />
+      </label>
+      <p class="muted compact-note">
+        Supported columns: Condition Description, Action To Be Taken, Due Date, Status.
+      </p>
+      <button type="submit">Import Compliance Items</button>
+    </form>
+
+    <div class="summary-list top-gap">
       <div>
         <span>Total items</span>
         <strong>{{ compliance_items|length }}</strong>
       </div>
+      <div>
+        <span>Overdue</span>
+        <strong>{{ overdue_items|length }}</strong>
+      </div>
+      <div>
+        <span>Due in 7 days</span>
+        <strong>{{ upcoming_items|length }}</strong>
+      </div>
     </div>
+  </article>
+</section>
+
+<section class="grid-two">
+  <article class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Overdue reminders</h2>
+        <p class="muted">Pending items that already need attention.</p>
+      </div>
+    </div>
+    {% if overdue_items %}
+    <div class="reminder-list">
+      {% for item in overdue_items %}
+      <div class="reminder-card danger-card">
+        <strong>{{ item["condition_description"] }}</strong>
+        <small>Due {{ item["due_date"] }}</small>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No overdue items in this project.</p>
+    {% endif %}
+  </article>
+
+  <article class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Upcoming reminders</h2>
+        <p class="muted">Pending items due within the next 7 days.</p>
+      </div>
+    </div>
+    {% if upcoming_items %}
+    <div class="reminder-list">
+      {% for item in upcoming_items %}
+      <div class="reminder-card">
+        <strong>{{ item["condition_description"] }}</strong>
+        <small>Due {{ item["due_date"] }}</small>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No upcoming items due in the next 7 days.</p>
+    {% endif %}
   </article>
 </section>
 
@@ -125,6 +184,13 @@
         <form method="post" action="{{ url_for('upload_document', item_id=item['id']) }}" enctype="multipart/form-data" class="inline-form">
           <input type="file" name="document" accept=".pdf,image/*" required />
           <button type="submit" class="secondary-button">Upload Proof</button>
+        </form>
+      </div>
+
+      <div class="action-row">
+        <a href="{{ url_for('edit_compliance_item', item_id=item['id']) }}">Edit item</a>
+        <form method="post" action="{{ url_for('delete_compliance_item', item_id=item['id']) }}" onsubmit="return confirm('Delete this compliance item?');">
+          <button type="submit" class="text-button danger-text">Delete item</button>
         </form>
       </div>
 

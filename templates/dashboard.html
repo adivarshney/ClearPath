@@ -25,6 +25,56 @@
     <span>Completed Compliance Items</span>
     <strong>{{ completed_count }}</strong>
   </article>
+  <article class="stat-card">
+    <span>Overdue Items</span>
+    <strong>{{ overdue_items|length }}</strong>
+  </article>
+</section>
+
+<section class="grid-two">
+  <article class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Overdue now</h2>
+        <p class="muted">Pending items already past their due date.</p>
+      </div>
+    </div>
+    {% if overdue_items %}
+    <div class="reminder-list">
+      {% for item in overdue_items %}
+      <a class="reminder-card danger-card" href="{{ url_for('project_detail', project_id=item['project_id']) }}">
+        <strong>{{ item["project_name"] }}</strong>
+        <span>{{ item["condition_description"] }}</span>
+        <small>Due {{ item["due_date"] }}</small>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No overdue pending items.</p>
+    {% endif %}
+  </article>
+
+  <article class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Due in 7 days</h2>
+        <p class="muted">Upcoming pending items that need attention soon.</p>
+      </div>
+    </div>
+    {% if upcoming_items %}
+    <div class="reminder-list">
+      {% for item in upcoming_items %}
+      <a class="reminder-card" href="{{ url_for('project_detail', project_id=item['project_id']) }}">
+        <strong>{{ item["project_name"] }}</strong>
+        <span>{{ item["condition_description"] }}</span>
+        <small>Due {{ item["due_date"] }}</small>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No upcoming pending items in the next 7 days.</p>
+    {% endif %}
+  </article>
 </section>
 
 <section class="panel">

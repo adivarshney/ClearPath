@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Compliance Item | ClearPath{% endblock %}
+
+{% block content %}
+<section class="page-header">
+  <div>
+    <span class="eyebrow">Compliance Item</span>
+    <h1>Edit compliance item</h1>
+    <p class="muted">Adjust the condition text, due date, action, or current status.</p>
+  </div>
+  <a class="secondary-button button-link" href="{{ url_for('project_detail', project_id=item['project_id']) }}">Back to Project</a>
+</section>
+
+<section class="panel form-panel">
+  <form method="post" class="stack-form">
+    <label>
+      <span>Condition description</span>
+      <textarea name="condition_description" rows="4" required>{{ item["condition_description"] }}</textarea>
+    </label>
+
+    <label>
+      <span>Action to be taken</span>
+      <textarea name="action_to_be_taken" rows="3" required>{{ item["action_to_be_taken"] }}</textarea>
+    </label>
+
+    <label>
+      <span>Due date</span>
+      <input type="date" name="due_date" value="{{ item['due_date'] }}" required />
+    </label>
+
+    <label>
+      <span>Status</span>
+      <select name="status">
+        <option value="Pending" {% if item["status"] == "Pending" %}selected{% endif %}>Pending</option>
+        <option value="Completed" {% if item["status"] == "Completed" %}selected{% endif %}>Completed</option>
+      </select>
+    </label>
+
+    <button type="submit">Update Compliance Item</button>
+  </form>
+</section>
+{% endblock %}

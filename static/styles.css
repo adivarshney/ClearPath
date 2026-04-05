@@ -48,6 +48,10 @@ button,
   box-shadow: var(--shadow);
 }
 
+.danger-button {
+  background: var(--danger);
+}
+
 .secondary-button {
   background: #fff;
   color: var(--accent);
@@ -176,7 +180,9 @@ label span,
 .panel-header,
 .compliance-top,
 .compliance-actions,
-.inline-form {
+.inline-form,
+.action-row,
+.header-actions {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
@@ -201,6 +207,10 @@ label span,
 
 .grid-two {
   grid-template-columns: 1.2fr 0.8fr;
+}
+
+.header-actions {
+  align-items: flex-end;
 }
 
 .panel,
@@ -233,7 +243,8 @@ label span,
 .summary-list,
 .flash-stack,
 .compliance-list,
-.document-list {
+.document-list,
+.reminder-list {
   display: grid;
   gap: 1rem;
 }
@@ -284,6 +295,14 @@ select[multiple] {
   gap: 0.6rem;
 }
 
+.compact-note {
+  margin: 0;
+}
+
+.top-gap {
+  margin-top: 1rem;
+}
+
 .pill,
 .status-badge {
   padding: 0.5rem 0.8rem;
@@ -311,6 +330,37 @@ select[multiple] {
   border-radius: 18px;
   padding: 1.2rem;
   background: rgba(255, 255, 255, 0.72);
+}
+
+.reminder-card {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  border-radius: 16px;
+  border: 1px solid var(--panel-border);
+  background: rgba(220, 232, 223, 0.45);
+  color: var(--text);
+}
+
+.reminder-card:hover {
+  text-decoration: none;
+}
+
+.danger-card {
+  background: rgba(156, 59, 48, 0.08);
+  border-color: rgba(156, 59, 48, 0.18);
+}
+
+.text-button {
+  background: transparent;
+  color: var(--accent);
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+.danger-text {
+  color: var(--danger);
 }
 
 .compliance-meta {
@@ -350,7 +400,9 @@ select[multiple] {
   .panel-header,
   .compliance-top,
   .compliance-actions,
-  .inline-form {
+  .inline-form,
+  .action-row,
+  .header-actions {
     flex-direction: column;
     align-items: stretch;
   }
