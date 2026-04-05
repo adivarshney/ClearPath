@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}ClearPath{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <div class="shell">
+      {% if g.user %}
+      <aside class="sidebar">
+        <a class="brand" href="{{ url_for('dashboard') }}">
+          <span class="brand-mark">C</span>
+          <div>
+            <strong>ClearPath</strong>
+            <small>Compliance Tracker</small>
+          </div>
+        </a>
+
+        <nav class="nav">
+          <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a>
+          <a href="{{ url_for('projects') }}" class="{% if request.endpoint in ['projects', 'project_detail', 'new_project'] %}active{% endif %}">Projects</a>
+          <a href="{{ url_for('new_project') }}">Add Project</a>
+        </nav>
+
+        <div class="sidebar-footer">
+          <p>{{ g.user["email"] }}</p>
+          <form method="post" action="{{ url_for('logout') }}">
+            <button type="submit" class="secondary-button full-width">Log out</button>
+          </form>
+        </div>
+      </aside>
+      {% endif %}
+
+      <main class="content {% if not g.user %}auth-layout{% endif %}">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="flash-stack">
+              {% for category, message in messages %}
+                <div class="flash flash-{{ category }}">{{ message }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </body>
+</html>

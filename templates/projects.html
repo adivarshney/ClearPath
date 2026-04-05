@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Projects | ClearPath{% endblock %}
+
+{% block content %}
+<section class="page-header">
+  <div>
+    <span class="eyebrow">Projects</span>
+    <h1>All projects</h1>
+    <p class="muted">Each project keeps approvals, conditions, deadlines, and proof together.</p>
+  </div>
+  <a class="button-link" href="{{ url_for('new_project') }}">Add Project</a>
+</section>
+
+<section class="panel">
+  {% if projects %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Project</th>
+          <th>Client</th>
+          <th>Location</th>
+          <th>Total Items</th>
+          <th>Pending</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for project in projects %}
+        <tr>
+          <td><a href="{{ url_for('project_detail', project_id=project['id']) }}">{{ project["name"] }}</a></td>
+          <td>{{ project["client_name"] }}</td>
+          <td>{{ project["location"] }}</td>
+          <td>{{ project["compliance_count"] }}</td>
+          <td>{{ project["pending_count"] or 0 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <h3>No projects found</h3>
+    <p>Add your first project to begin tracking compliance conditions.</p>
+    <a class="button-link" href="{{ url_for('new_project') }}">Create Project</a>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

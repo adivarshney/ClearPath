@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}{{ project["name"] }} | ClearPath{% endblock %}
+
+{% block content %}
+<section class="page-header">
+  <div>
+    <span class="eyebrow">Project Detail</span>
+    <h1>{{ project["name"] }}</h1>
+    <p class="muted">{{ project["client_name"] }} • {{ project["location"] }}</p>
+  </div>
+  <div class="pill-group">
+    {% for approval in approvals %}
+    <span class="pill">{{ approval }}</span>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="grid-two">
+  <article class="panel form-panel">
+    <div class="panel-header">
+      <div>
+        <h2>Add compliance item</h2>
+        <p class="muted">Track one condition, action, due date, and current status.</p>
+      </div>
+    </div>
+
+    <form method="post" action="{{ url_for('add_compliance_item', project_id=project['id']) }}" class="stack-form">
+      <label>
+        <span>Condition description</span>
+        <textarea name="condition_description" rows="4" required></textarea>
+      </label>
+
+      <label>
+        <span>Action to be taken</span>
+        <textarea name="action_to_be_taken" rows="3" required></textarea>
+      </label>
+
+      <label>
+        <span>Due date</span>
+        <input type="date" name="due_date" required />
+      </label>
+
+      <label>
+        <span>Status</span>
+        <select name="status">
+          <option value="Pending">Pending</option>
+          <option value="Completed">Completed</option>
+        </select>
+      </label>
+
+      <button type="submit">Add Compliance Item</button>
+    </form>
+  </article>
+
+  <article class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Project summary</h2>
+        <p class="muted">A compact view of the project’s compliance scope.</p>
+      </div>
+    </div>
+
+    <div class="summary-list">
+      <div>
+        <span>Client</span>
+        <strong>{{ project["client_name"] }}</strong>
+      </div>
+      <div>
+        <span>Location</span>
+        <strong>{{ project["location"] }}</strong>
+      </div>
+      <div>
+        <span>Approvals</span>
+        <strong>{{ approvals|join(", ") }}</strong>
+      </div>
+      <div>
+        <span>Total items</span>
+        <strong>{{ compliance_items|length }}</strong>
+      </div>
+    </div>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h2>Compliance tracker</h2>
+      <p class="muted">Update status manually and attach proof documents for each item.</p>
+    </div>
+  </div>
+
+  {% if compliance_items %}
+  <div class="compliance-list">
+    {% for item in compliance_items %}
+    <article class="compliance-card">
+      <div class="compliance-top">
+        <div>
+          <span class="item-label">Condition</span>
+          <h3>{{ item["condition_description"] }}</h3>
+        </div>
+        <span class="status-badge status-{{ item['status']|lower }}">{{ item["status"] }}</span>
+      </div>
+
+      <div class="compliance-meta">
+        <div>
+          <span class="item-label">Action</span>
+          <p>{{ item["action_to_be_taken"] }}</p>
+        </div>
+        <div>
+          <span class="item-label">Due date</span>
+          <p>{{ item["due_date"] }}</p>
+        </div>
+      </div>
+
+      <div class="compliance-actions">
+        <form method="post" action="{{ url_for('update_compliance_status', item_id=item['id']) }}" class="inline-form">
+          <select name="status">
+            <option value="Pending" {% if item["status"] == "Pending" %}selected{% endif %}>Pending</option>
+            <option value="Completed" {% if item["status"] == "Completed" %}selected{% endif %}>Completed</option>
+          </select>
+          <button type="submit" class="secondary-button">Update Status</button>
+        </form>
+
+        <form method="post" action="{{ url_for('upload_document', item_id=item['id']) }}" enctype="multipart/form-data" class="inline-form">
+          <input type="file" name="document" accept=".pdf,image/*" required />
+          <button type="submit" class="secondary-button">Upload Proof</button>
+        </form>
+      </div>
+
+      <div class="document-list">
+        <span class="item-label">Documents</span>
+        {% if documents_by_item.get(item["id"]) %}
+          {% for document in documents_by_item[item["id"]] %}
+          <a href="{{ url_for('view_document', document_id=document['id']) }}" target="_blank" rel="noopener noreferrer">
+            {{ document["original_filename"] }}
+          </a>
+          {% endfor %}
+        {% else %}
+          <p class="muted">No documents uploaded yet.</p>
+        {% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <h3>No compliance items yet</h3>
+    <p>Add the first condition for this project to start tracking deadlines and proofs.</p>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

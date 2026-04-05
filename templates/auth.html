@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}{{ "Sign Up" if mode == "signup" else "Log In" }} | ClearPath{% endblock %}
+
+{% block content %}
+<section class="auth-card">
+  <div>
+    <span class="eyebrow">Environmental Compliance</span>
+    <h1>{{ "Create your account" if mode == "signup" else "Welcome back" }}</h1>
+    <p class="muted">
+      Track NOCs, deadlines, conditions, and supporting documents in one place.
+    </p>
+  </div>
+
+  <form method="post" class="stack-form">
+    <label>
+      <span>Email</span>
+      <input type="email" name="email" required />
+    </label>
+
+    <label>
+      <span>Password</span>
+      <input type="password" name="password" required minlength="8" />
+    </label>
+
+    {% if mode == "signup" %}
+    <label>
+      <span>Confirm password</span>
+      <input type="password" name="confirm_password" required minlength="8" />
+    </label>
+    {% endif %}
+
+    <button type="submit">{{ "Sign Up" if mode == "signup" else "Log In" }}</button>
+  </form>
+
+  <p class="muted">
+    {% if mode == "signup" %}
+      Already have an account? <a href="{{ url_for('login') }}">Log in</a>
+    {% else %}
+      New here? <a href="{{ url_for('signup') }}">Create an account</a>
+    {% endif %}
+  </p>
+</section>
+{% endblock %}

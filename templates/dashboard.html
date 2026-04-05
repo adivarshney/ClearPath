@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard | ClearPath{% endblock %}
+
+{% block content %}
+<section class="page-header">
+  <div>
+    <span class="eyebrow">Overview</span>
+    <h1>Compliance dashboard</h1>
+    <p class="muted">A quick view of project volume and compliance progress.</p>
+  </div>
+  <a class="button-link" href="{{ url_for('new_project') }}">Add New Project</a>
+</section>
+
+<section class="stats-grid">
+  <article class="stat-card">
+    <span>Total Projects</span>
+    <strong>{{ project_count }}</strong>
+  </article>
+  <article class="stat-card">
+    <span>Pending Compliance Items</span>
+    <strong>{{ pending_count }}</strong>
+  </article>
+  <article class="stat-card">
+    <span>Completed Compliance Items</span>
+    <strong>{{ completed_count }}</strong>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h2>Recent projects</h2>
+      <p class="muted">Your latest compliance workspaces.</p>
+    </div>
+    <a href="{{ url_for('projects') }}">View all</a>
+  </div>
+
+  {% if recent_projects %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Project</th>
+          <th>Client</th>
+          <th>Location</th>
+          <th>Compliance Items</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for project in recent_projects %}
+        <tr>
+          <td><a href="{{ url_for('project_detail', project_id=project['id']) }}">{{ project["name"] }}</a></td>
+          <td>{{ project["client_name"] }}</td>
+          <td>{{ project["location"] }}</td>
+          <td>{{ project["compliance_count"] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <h3>No projects yet</h3>
+    <p>Start by adding your first project and its approvals.</p>
+    <a class="button-link" href="{{ url_for('new_project') }}">Create Project</a>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
