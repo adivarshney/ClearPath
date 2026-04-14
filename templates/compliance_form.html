@@ -21,21 +21,34 @@
 
     <label>
       <span>Action to be taken</span>
-      <textarea name="action_to_be_taken" rows="3" required>{{ item["action_to_be_taken"] }}</textarea>
+      <textarea name="action_to_be_taken" rows="3">{{ item["action_to_be_taken"] }}</textarea>
     </label>
 
-    <label>
-      <span>Due date</span>
-      <input type="date" name="due_date" value="{{ item['due_date'] }}" required />
-    </label>
+    <div class="triple-grid">
+      <label>
+        <span>Frequency</span>
+        <select name="frequency">
+          {% for frequency in frequency_types %}
+          <option value="{{ frequency }}" {% if item["frequency"] == frequency %}selected{% endif %}>{{ frequency }}</option>
+          {% endfor %}
+        </select>
+      </label>
 
-    <label>
-      <span>Status</span>
-      <select name="status">
-        <option value="Pending" {% if item["status"] == "Pending" %}selected{% endif %}>Pending</option>
-        <option value="Completed" {% if item["status"] == "Completed" %}selected{% endif %}>Completed</option>
-      </select>
-    </label>
+      <label>
+        <span>Due date</span>
+        <input type="date" name="due_date" value="{{ item['due_date'] }}" />
+      </label>
+
+      <label>
+        <span>Status</span>
+        <select name="status">
+          <option value="Pending" {% if item["status"] == "Pending" %}selected{% endif %}>Pending</option>
+          <option value="Completed" {% if item["status"] == "Completed" %}selected{% endif %}>Completed</option>
+        </select>
+      </label>
+    </div>
+
+    <p class="muted compact-note">Due date is optional for general or ongoing site conditions.</p>
 
     <button type="submit">Update Compliance Item</button>
   </form>

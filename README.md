@@ -6,12 +6,14 @@ A simple web-based environmental compliance tracker for consultants handling app
 
 - Email and password signup/login
 - Project creation with client, location, and approval types
-- Per-project compliance tracker with due dates and manual status updates
+- Project approvals with issue date and expiry date slots
+- Per-project compliance tracker with optional due dates, frequency, and manual status updates
 - Document uploads for each compliance item
 - Dashboard with total projects, pending items, and completed items
 - CSV/XLSX import for compliance trackers
 - Edit/delete flows for projects and compliance items
 - Upcoming and overdue reminder sections
+- Status and frequency filters for compliance review
 
 ## Run locally
 
@@ -36,6 +38,9 @@ Uploaded files and the SQLite database are stored under `instance/`.
 The compliance import accepts `.csv` and `.xlsx` files with these columns:
 
 - `Condition Description`
-- `Action To Be Taken`
-- `Due Date`
+- `Action To Be Taken` (optional)
+- `Due Date` (optional)
 - `Status` (optional, defaults to `Pending`)
+- `Frequency` (optional)
+
+Single-column condition sheets are also supported.

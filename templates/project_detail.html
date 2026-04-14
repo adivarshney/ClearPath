@@ -12,7 +12,7 @@
   <div class="header-actions">
     <div class="pill-group">
       {% for approval in approvals %}
-      <span class="pill">{{ approval }}</span>
+      <span class="pill">{{ approval["approval_type"] }}</span>
       {% endfor %}
     </div>
     <div class="action-row">
@@ -29,7 +29,7 @@
     <div class="panel-header">
       <div>
         <h2>Add compliance item</h2>
-        <p class="muted">Track one condition, action, due date, and current status.</p>
+        <p class="muted">Track one condition, optional due date, frequency, and current status.</p>
       </div>
     </div>
 
@@ -41,21 +41,35 @@
 
       <label>
         <span>Action to be taken</span>
-        <textarea name="action_to_be_taken" rows="3" required></textarea>
+        <textarea name="action_to_be_taken" rows="3"></textarea>
       </label>
 
-      <label>
-        <span>Due date</span>
-        <input type="date" name="due_date" required />
-      </label>
+      <div class="triple-grid">
+        <label>
+          <span>Frequency</span>
+          <select name="frequency">
+            <option value="General">General</option>
+            <option value="One-time">One-time</option>
+            <option value="Monthly">Monthly</option>
+            <option value="Quarterly">Quarterly</option>
+          </select>
+        </label>
 
-      <label>
-        <span>Status</span>
-        <select name="status">
-          <option value="Pending">Pending</option>
-          <option value="Completed">Completed</option>
-        </select>
-      </label>
+        <label>
+          <span>Due date</span>
+          <input type="date" name="due_date" />
+        </label>
+
+        <label>
+          <span>Status</span>
+          <select name="status">
+            <option value="Pending">Pending</option>
+            <option value="Completed">Completed</option>
+          </select>
+        </label>
+      </div>
+
+      <p class="muted compact-note">Leave due date blank for general conditions that do not have a fixed deadline.</p>
 
       <button type="submit">Add Compliance Item</button>
     </form>
@@ -65,7 +79,7 @@
     <div class="panel-header">
       <div>
         <h2>Import tracker</h2>
-        <p class="muted">Bring in existing CSV or Excel trackers with standard columns.</p>
+        <p class="muted">Bring in Excel or CSV trackers, even if they only contain condition text.</p>
       </div>
     </div>
 
@@ -75,15 +89,18 @@
         <input type="file" name="import_file" accept=".csv,.xlsx" required />
       </label>
       <p class="muted compact-note">
-        Supported columns: Condition Description, Action To Be Taken, Due Date, Status.
+        Supported columns: Condition Description, Action To Be Taken, Due Date, Status, Frequency. Single-column condition sheets also work.
       </p>
       <button type="submit">Import Compliance Items</button>
     </form>
+    <a class="secondary-button button-link" href="{{ url_for('download_project_import_sample', project_id=project['id']) }}">
+      Download Sample Template
+    </a>
 
     <div class="summary-list top-gap">
       <div>
         <span>Total items</span>
-        <strong>{{ compliance_items|length }}</strong>
+        <strong>{{ all_compliance_items|length }}</strong>
       </div>
       <div>
         <span>Overdue</span>
@@ -95,6 +112,91 @@
       </div>
     </div>
   </article>
+</section>
+
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h2>Project calendar</h2>
+      <p class="muted">Upcoming compliance deadlines and approval milestones. Choose a 1, 2, or 3 month view.</p>
+    </div>
+    <div class="filter-group">
+      {% for option in calendar_view_options %}
+      <a
+        class="filter-chip {% if option == calendar_view %}active{% endif %}"
+        href="{{ url_for('project_detail', project_id=project['id'], status_filter=status_filter, frequency_filter=frequency_filter, calendar_view=option) }}"
+      >
+        {{ option }} Month{% if option > 1 %}s{% endif %}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="calendar-grid calendar-view-{{ calendar_view }}">
+    {% for month in calendar_months %}
+    <article class="calendar-card">
+      <div class="calendar-head">
+        <strong>{{ month["label"] }}</strong>
+      </div>
+      <div class="calendar-weekdays">
+        <span>Mon</span>
+        <span>Tue</span>
+        <span>Wed</span>
+        <span>Thu</span>
+        <span>Fri</span>
+        <span>Sat</span>
+        <span>Sun</span>
+      </div>
+      <div class="calendar-days">
+        {% for day in month["days"] %}
+        <div class="calendar-day {% if not day['day'] %}calendar-empty{% endif %} {% if day['is_today'] %}calendar-today{% endif %}">
+          {% if day["day"] %}
+          <span class="calendar-date">{{ day["day"] }}</span>
+          <div class="calendar-events">
+            {% for event in day["events"][:2] %}
+            <a class="calendar-event calendar-{{ event['kind'] }}" href="{{ event['href'] }}" title="{{ event['label'] }}">{{ event["label"] }}</a>
+            {% endfor %}
+            {% if day["events"]|length > 2 %}
+            <span class="calendar-more">+{{ day["events"]|length - 2 }} more</span>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h2>NOC dates</h2>
+      <p class="muted">Track issue and expiry dates for each approval so renewal timelines are visible.</p>
+    </div>
+  </div>
+
+  <div class="approval-grid">
+    {% for approval in approvals %}
+    <article class="approval-card">
+      <div class="approval-card-head">
+        <strong>{{ approval["approval_type"] }}</strong>
+        <span class="status-badge status-{{ approval['expiry_state']|lower|replace(' ', '-') }}">{{ approval["expiry_state"] }}</span>
+      </div>
+      <div class="summary-list">
+        <div>
+          <span>Date of issue</span>
+          <strong>{{ approval["issue_date"] or "Not set" }}</strong>
+        </div>
+        <div>
+          <span>Expiry date</span>
+          <strong>{{ approval["expiry_date"] or "Not set" }}</strong>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
 </section>
 
 <section class="grid-two">
@@ -145,30 +247,57 @@
   <div class="panel-header">
     <div>
       <h2>Compliance tracker</h2>
-      <p class="muted">Update status manually and attach proof documents for each item.</p>
+      <p class="muted">Filter by urgency or frequency, update status manually, and attach proof documents.</p>
+    </div>
+  </div>
+
+  <div class="filters-bar">
+    <div class="filter-group">
+      {% for current_filter in status_filters %}
+      <a
+        class="filter-chip {% if current_filter == status_filter %}active{% endif %}"
+        href="{{ url_for('project_detail', project_id=project['id'], status_filter=current_filter, frequency_filter=frequency_filter) }}"
+      >
+        {{ current_filter }} ({{ status_counts[current_filter] }})
+      </a>
+      {% endfor %}
+    </div>
+
+    <div class="filter-group">
+      {% for current_frequency in frequency_filters %}
+      <a
+        class="filter-chip {% if current_frequency == frequency_filter %}active{% endif %}"
+        href="{{ url_for('project_detail', project_id=project['id'], status_filter=status_filter, frequency_filter=current_frequency) }}"
+      >
+        {{ current_frequency }} ({{ frequency_counts[current_frequency] }})
+      </a>
+      {% endfor %}
     </div>
   </div>
 
   {% if compliance_items %}
   <div class="compliance-list">
     {% for item in compliance_items %}
-    <article class="compliance-card">
+    <article class="compliance-card {% if item['is_overdue'] %}compliance-overdue{% elif item['is_due_soon'] %}compliance-soon{% endif %}">
       <div class="compliance-top">
         <div>
           <span class="item-label">Condition</span>
           <h3>{{ item["condition_description"] }}</h3>
         </div>
-        <span class="status-badge status-{{ item['status']|lower }}">{{ item["status"] }}</span>
+        <div class="status-stack">
+          <span class="status-badge status-{{ item['derived_status']|lower|replace(' ', '-') }}">{{ item["derived_status"] }}</span>
+          <span class="status-badge status-frequency">{{ item["frequency"] }}</span>
+        </div>
       </div>
 
       <div class="compliance-meta">
         <div>
           <span class="item-label">Action</span>
-          <p>{{ item["action_to_be_taken"] }}</p>
+          <p>{{ item["action_to_be_taken"] or "No action specified yet." }}</p>
         </div>
         <div>
           <span class="item-label">Due date</span>
-          <p>{{ item["due_date"] }}</p>
+          <p>{{ item["due_date"] or "No fixed deadline" }}</p>
         </div>
       </div>
 
@@ -208,6 +337,11 @@
       </div>
     </article>
     {% endfor %}
+  </div>
+  {% elif all_compliance_items %}
+  <div class="empty-state">
+    <h3>No items match the selected filters</h3>
+    <p>Try switching the urgency or frequency filter to see the rest of the tracker.</p>
   </div>
   {% else %}
   <div class="empty-state">

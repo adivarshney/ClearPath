@@ -28,14 +28,30 @@
       <input type="text" name="location" value="{{ request.form.get('location', project['location'] if project else '') }}" required />
     </label>
 
-    <label>
-      <span>Approvals</span>
-      <select name="approval_types" multiple size="3" required>
-        {% for approval in approval_types %}
-        <option value="{{ approval }}" {% if approval in selected_approvals %}selected{% endif %}>{{ approval }}</option>
+    <div class="section-block">
+      <div class="section-heading">
+        <span>Approvals</span>
+        <p class="muted compact-note">Select each NOC that applies and optionally record issue and expiry dates.</p>
+      </div>
+      <div class="approval-grid">
+        {% for approval in approval_form_entries %}
+        <article class="approval-card">
+          <label class="toggle-row">
+            <input type="checkbox" name="approval_enabled_{{ approval['approval_type'] }}" {% if approval["selected"] %}checked{% endif %} />
+            <strong>{{ approval["approval_type"] }}</strong>
+          </label>
+          <label>
+            <span>Date of issue</span>
+            <input type="date" name="issue_date_{{ approval['approval_type'] }}" value="{{ approval['issue_date'] }}" />
+          </label>
+          <label>
+            <span>Expiry date</span>
+            <input type="date" name="expiry_date_{{ approval['approval_type'] }}" value="{{ approval['expiry_date'] }}" />
+          </label>
+        </article>
         {% endfor %}
-      </select>
-    </label>
+      </div>
+    </div>
 
     <button type="submit">{{ submit_label }}</button>
   </form>

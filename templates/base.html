@@ -7,9 +7,9 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
   </head>
   <body>
-    <div class="shell">
-      {% if g.user %}
-      <aside class="sidebar">
+    {% if g.user %}
+    <header class="topbar">
+      <div class="topbar-inner">
         <a class="brand" href="{{ url_for('dashboard') }}">
           <span class="brand-mark">C</span>
           <div>
@@ -20,20 +20,48 @@
 
         <nav class="nav">
           <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a>
-          <a href="{{ url_for('projects') }}" class="{% if request.endpoint in ['projects', 'project_detail', 'new_project'] %}active{% endif %}">Projects</a>
-          <a href="{{ url_for('new_project') }}">Add Project</a>
+          <a href="{{ url_for('projects') }}" class="{% if request.endpoint in ['projects', 'project_detail', 'new_project', 'edit_project', 'edit_compliance_item'] %}active{% endif %}">Projects</a>
+          <a href="{{ url_for('new_project') }}">New Project</a>
         </nav>
 
-        <div class="sidebar-footer">
-          <p>{{ g.user["email"] }}</p>
+        <div class="topbar-meta">
+          <details class="notification-menu">
+            <summary class="notification-trigger">
+              <span class="notification-icon">!</span>
+              {% if g.notification_count %}
+              <span class="notification-badge">{{ g.notification_count }}</span>
+              {% endif %}
+            </summary>
+            <div class="notification-panel">
+              <div class="notification-head">
+                <strong>Upcoming due dates</strong>
+                <small>Next 7 days</small>
+              </div>
+              {% if g.notification_items %}
+              <div class="notification-list">
+                {% for item in g.notification_items %}
+                <a class="notification-item" href="{{ url_for('project_detail', project_id=item['project_id'], status_filter='Due in 7 days') }}">
+                  <strong>{{ item["project_name"] }}</strong>
+                  <span>{{ item["condition_description"] }}</span>
+                  <small>Due {{ item["due_date"] }}</small>
+                </a>
+                {% endfor %}
+              </div>
+              {% else %}
+              <p class="muted compact-note">No upcoming due dates in the next 7 days.</p>
+              {% endif %}
+            </div>
+          </details>
+          <span class="user-chip">{{ g.user["email"] }}</span>
           <form method="post" action="{{ url_for('logout') }}">
-            <button type="submit" class="secondary-button full-width">Log out</button>
+            <button type="submit" class="secondary-button">Log out</button>
           </form>
         </div>
-      </aside>
-      {% endif %}
+      </div>
+    </header>
+    {% endif %}
 
-      <main class="content {% if not g.user %}auth-layout{% endif %}">
+    <main class="content {% if not g.user %}auth-layout{% endif %}">
         {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}
             <div class="flash-stack">
@@ -45,7 +73,6 @@
         {% endwith %}
 
         {% block content %}{% endblock %}
-      </main>
-    </div>
+    </main>
   </body>
 </html>
