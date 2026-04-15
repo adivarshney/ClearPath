@@ -31,7 +31,7 @@ INSTANCE_DIR = BASE_DIR / "instance"
 DATABASE_PATH = INSTANCE_DIR / "clearpath.db"
 UPLOAD_DIR = INSTANCE_DIR / "uploads"
 APPROVAL_TYPES = ["EC", "CTE", "CTO"]
-FREQUENCY_TYPES = ["General", "One-time", "Monthly", "Quarterly"]
+FREQUENCY_TYPES = ["General", "One-time", "Monthly", "Quarterly", "Half-yearly", "Yearly"]
 STATUS_FILTERS = ["All", "Pending", "Due in 7 days", "Overdue", "Completed"]
 CALENDAR_VIEW_OPTIONS = [1, 2, 3]
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
@@ -115,6 +115,7 @@ def init_db():
             action_to_be_taken TEXT NOT NULL DEFAULT '',
             due_date TEXT NOT NULL DEFAULT '',
             frequency TEXT NOT NULL DEFAULT 'General',
+            schedule_source TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL CHECK (status IN ('Pending', 'Completed')) DEFAULT 'Pending',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -133,6 +134,7 @@ def init_db():
     ensure_column(db, "project_approvals", "issue_date", "TEXT NOT NULL DEFAULT ''")
     ensure_column(db, "project_approvals", "expiry_date", "TEXT NOT NULL DEFAULT ''")
     ensure_column(db, "compliance_items", "frequency", "TEXT NOT NULL DEFAULT 'General'")
+    ensure_column(db, "compliance_items", "schedule_source", "TEXT NOT NULL DEFAULT ''")
     db.close()
 
 
@@ -161,8 +163,9 @@ def load_logged_in_user():
     if user_id is not None:
         g.user = get_db().execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         if g.user is not None:
-            g.notification_items = fetch_notification_items_for_user(g.user["id"])
-            g.notification_count = count_upcoming_items_for_user(g.user["id"])
+            _, upcoming_items = build_user_reminders(g.user["id"])
+            g.notification_items = upcoming_items[:6]
+            g.notification_count = len(upcoming_items)
 
 
 def get_owned_project(project_id):
@@ -242,10 +245,42 @@ def normalize_frequency(value, due_date=""):
         "onetime": "One-time",
         "monthly": "Monthly",
         "quarterly": "Quarterly",
+        "half yearly": "Half-yearly",
+        "half-yearly": "Half-yearly",
+        "half yearly basis": "Half-yearly",
+        "yearly": "Yearly",
+        "annual": "Yearly",
     }
     if cleaned in frequency_map:
         return frequency_map[cleaned]
     return "One-time" if due_date else "General"
+
+
+def parse_iso_date(value):
+    cleaned = clean_text(value)
+    if not cleaned:
+        return None
+    try:
+        return datetime.strptime(cleaned, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def add_months(source_date, months):
+    month = source_date.month - 1 + months
+    year = source_date.year + month // 12
+    month = month % 12 + 1
+    day = min(source_date.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def recurrence_interval_months(frequency):
+    return {
+        "Monthly": 1,
+        "Quarterly": 3,
+        "Half-yearly": 6,
+        "Yearly": 12,
+    }.get(frequency, 0)
 
 
 def looks_like_section_header(text):
@@ -314,6 +349,7 @@ def parse_import_matrix(rows):
                 "due_date": due_date,
                 "status": normalize_status(status_raw),
                 "frequency": normalize_frequency(frequency_raw, due_date),
+                "schedule_source": "",
             }
         )
 
@@ -434,14 +470,19 @@ def derive_item_status(status, due_date_value):
     return "Pending"
 
 
-def annotate_compliance_items(rows):
+def annotate_compliance_items(rows, approval_lookup):
     annotated = []
     for row in rows:
         item = dict(row)
-        item["derived_status"] = derive_item_status(item["status"], item["due_date"])
-        item["has_due_date"] = bool(item["due_date"])
+        item["next_due_date"] = compute_next_due_date(item, approval_lookup)
+        item["display_due_date"] = item["next_due_date"] or item["due_date"]
+        item["derived_status"] = derive_item_status(item["status"], item["display_due_date"])
+        item["has_due_date"] = bool(item["display_due_date"])
         item["is_overdue"] = item["derived_status"] == "Overdue"
         item["is_due_soon"] = item["derived_status"] == "Due in 7 days"
+        item["schedule_label"] = item["frequency"]
+        if item.get("schedule_source"):
+            item["schedule_label"] = f"{item['frequency']} from {item['schedule_source']}"
         annotated.append(item)
     return annotated
 
@@ -488,19 +529,81 @@ def annotate_approval_rows(rows):
     return annotated
 
 
+def build_approval_lookup(approval_rows):
+    return {row["approval_type"]: dict(row) for row in approval_rows}
+
+
+def resolve_schedule_anchor(item, approval_lookup):
+    schedule_source = clean_text(item.get("schedule_source"))
+    if schedule_source and schedule_source in approval_lookup:
+        approval = approval_lookup[schedule_source]
+        return parse_iso_date(approval.get("issue_date")), parse_iso_date(approval.get("expiry_date"))
+    return parse_iso_date(item.get("due_date")), None
+
+
+def compute_next_due_date(item, approval_lookup, from_date=None):
+    if item["frequency"] in {"General", ""}:
+        return item.get("due_date", "")
+
+    from_date = from_date or date.today()
+    interval_months = recurrence_interval_months(item["frequency"])
+    if not interval_months:
+        return item.get("due_date", "")
+
+    anchor_date, end_date = resolve_schedule_anchor(item, approval_lookup)
+    if not anchor_date:
+        return item.get("due_date", "")
+
+    occurrence = anchor_date
+    last_occurrence = None
+    while occurrence <= from_date:
+        last_occurrence = occurrence
+        occurrence = add_months(occurrence, interval_months)
+
+    if item.get("status") == "Pending" and last_occurrence is not None:
+        candidate = last_occurrence
+    else:
+        candidate = occurrence
+
+    if end_date and candidate > end_date:
+        return ""
+    return candidate.isoformat()
+
+
+def generate_schedule_dates(item, approval_lookup, window_start, window_end):
+    if item["frequency"] in {"General", ""}:
+        due_date = parse_iso_date(item.get("due_date"))
+        if due_date and window_start <= due_date <= window_end:
+            return [due_date]
+        return []
+
+    interval_months = recurrence_interval_months(item["frequency"])
+    if not interval_months:
+        due_date = parse_iso_date(item.get("due_date"))
+        if due_date and window_start <= due_date <= window_end:
+            return [due_date]
+        return []
+
+    anchor_date, end_date = resolve_schedule_anchor(item, approval_lookup)
+    if not anchor_date:
+        return []
+
+    occurrence = anchor_date
+    dates = []
+    while occurrence <= window_end:
+        if end_date and occurrence > end_date:
+            break
+        if occurrence >= window_start:
+            dates.append(occurrence)
+        occurrence = add_months(occurrence, interval_months)
+    return dates
+
+
 def build_project_calendar(project_id, months=1):
     project = get_owned_project(project_id)
-    db = get_db()
-    due_items = db.execute(
-        """
-        SELECT id, condition_description, due_date, frequency
-        FROM compliance_items
-        WHERE project_id = ? AND due_date != ''
-        ORDER BY due_date ASC
-        """,
-        (project_id,),
-    ).fetchall()
     approvals = fetch_project_approvals(project_id)
+    approval_lookup = build_approval_lookup(approvals)
+    due_items = fetch_project_compliance_items(project_id)
 
     event_map = {}
 
@@ -511,13 +614,20 @@ def build_project_calendar(project_id, months=1):
             {"label": label, "kind": kind, "href": href}
         )
 
+    start = date.today().replace(day=1)
+    current_year = start.year
+    current_month = start.month
+    months_data = []
+    window_end = add_months(start, months) - timedelta(days=1)
+
     for item in due_items:
-        add_event(
-            item["due_date"],
-            f"{item['frequency']}: {item['condition_description']}",
-            "due",
-            url_for("project_detail", project_id=project["id"]),
-        )
+        for occurrence in generate_schedule_dates(dict(item), approval_lookup, start, window_end):
+            add_event(
+                occurrence.isoformat(),
+                f"{item['frequency']}: {item['condition_description']}",
+                "due",
+                url_for("project_detail", project_id=project["id"]),
+            )
 
     for approval in approvals:
         add_event(
@@ -532,11 +642,6 @@ def build_project_calendar(project_id, months=1):
             "expiry",
             url_for("edit_project", project_id=project["id"]),
         )
-
-    start = date.today().replace(day=1)
-    current_year = start.year
-    current_month = start.month
-    months_data = []
 
     for _ in range(months):
         month_matrix = calendar.monthcalendar(current_year, current_month)
@@ -621,123 +726,77 @@ def build_documents_by_item(documents):
     return docs_by_item
 
 
-def fetch_upcoming_items_for_user(user_id, days=7):
-    today = date.today().isoformat()
+def fetch_user_approval_rows(user_id):
+    return get_db().execute(
+        """
+        SELECT pa.project_id, pa.approval_type, pa.issue_date, pa.expiry_date
+        FROM project_approvals pa
+        JOIN projects p ON p.id = pa.project_id
+        WHERE p.user_id = ?
+        """,
+        (user_id,),
+    ).fetchall()
+
+
+def fetch_user_compliance_rows(user_id):
+    return get_db().execute(
+        """
+        SELECT ci.*, p.name AS project_name
+        FROM compliance_items ci
+        JOIN projects p ON p.id = ci.project_id
+        WHERE p.user_id = ?
+        ORDER BY p.name ASC, ci.created_at DESC
+        """,
+        (user_id,),
+    ).fetchall()
+
+
+def build_project_approval_lookup(approval_rows):
+    project_lookup = {}
+    for row in approval_rows:
+        project_lookup.setdefault(row["project_id"], {})[row["approval_type"]] = dict(row)
+    return project_lookup
+
+
+def annotate_user_compliance_items(user_id):
+    approval_lookup = build_project_approval_lookup(fetch_user_approval_rows(user_id))
+    annotated = []
+    for row in fetch_user_compliance_rows(user_id):
+        item = dict(row)
+        project_approvals = approval_lookup.get(item["project_id"], {})
+        item["next_due_date"] = compute_next_due_date(item, project_approvals)
+        item["display_due_date"] = item["next_due_date"] or item["due_date"]
+        item["derived_status"] = derive_item_status(item["status"], item["display_due_date"])
+        annotated.append(item)
+    return annotated
+
+
+def build_user_reminders(user_id, days=7):
     cutoff = (date.today() + timedelta(days=days)).isoformat()
-    return get_db().execute(
-        """
-        SELECT ci.id, ci.condition_description, ci.due_date, p.id AS project_id, p.name AS project_name
-        FROM compliance_items ci
-        JOIN projects p ON p.id = ci.project_id
-        WHERE p.user_id = ?
-          AND ci.status = 'Pending'
-          AND ci.due_date != ''
-          AND ci.due_date BETWEEN ? AND ?
-        ORDER BY ci.due_date ASC, p.name ASC
-        LIMIT 8
-        """,
-        (user_id, today, cutoff),
-    ).fetchall()
+    items = annotate_user_compliance_items(user_id)
+    overdue_items = [
+        item for item in items if item["status"] == "Pending" and item["derived_status"] == "Overdue"
+    ]
+    upcoming_items = [
+        item for item in items if item["status"] == "Pending" and item["derived_status"] == "Due in 7 days"
+    ]
+    upcoming_items = [item for item in upcoming_items if item["display_due_date"] <= cutoff]
+    overdue_items.sort(key=lambda item: item["display_due_date"])
+    upcoming_items.sort(key=lambda item: item["display_due_date"])
+    return overdue_items, upcoming_items
 
 
-def fetch_notification_items_for_user(user_id, days=7, limit=6):
-    today = date.today().isoformat()
-    cutoff = (date.today() + timedelta(days=days)).isoformat()
-    return get_db().execute(
-        """
-        SELECT ci.id, ci.condition_description, ci.due_date, p.id AS project_id, p.name AS project_name
-        FROM compliance_items ci
-        JOIN projects p ON p.id = ci.project_id
-        WHERE p.user_id = ?
-          AND ci.status = 'Pending'
-          AND ci.due_date != ''
-          AND ci.due_date BETWEEN ? AND ?
-        ORDER BY ci.due_date ASC, p.name ASC
-        LIMIT ?
-        """,
-        (user_id, today, cutoff, limit),
-    ).fetchall()
-
-
-def fetch_overdue_items_for_user(user_id):
-    today = date.today().isoformat()
-    return get_db().execute(
-        """
-        SELECT ci.id, ci.condition_description, ci.due_date, p.id AS project_id, p.name AS project_name
-        FROM compliance_items ci
-        JOIN projects p ON p.id = ci.project_id
-        WHERE p.user_id = ?
-          AND ci.status = 'Pending'
-          AND ci.due_date != ''
-          AND ci.due_date < ?
-        ORDER BY ci.due_date ASC, p.name ASC
-        LIMIT 8
-        """,
-        (user_id, today),
-    ).fetchall()
-
-
-def count_upcoming_items_for_user(user_id, days=7):
-    today = date.today().isoformat()
-    cutoff = (date.today() + timedelta(days=days)).isoformat()
-    return get_db().execute(
-        """
-        SELECT COUNT(*) AS count
-        FROM compliance_items ci
-        JOIN projects p ON p.id = ci.project_id
-        WHERE p.user_id = ?
-          AND ci.status = 'Pending'
-          AND ci.due_date != ''
-          AND ci.due_date BETWEEN ? AND ?
-        """,
-        (user_id, today, cutoff),
-    ).fetchone()["count"]
-
-
-def count_overdue_items_for_user(user_id):
-    today = date.today().isoformat()
-    return get_db().execute(
-        """
-        SELECT COUNT(*) AS count
-        FROM compliance_items ci
-        JOIN projects p ON p.id = ci.project_id
-        WHERE p.user_id = ?
-          AND ci.status = 'Pending'
-          AND ci.due_date != ''
-          AND ci.due_date < ?
-        """,
-        (user_id, today),
-    ).fetchone()["count"]
-
-
-def fetch_project_reminders(project_id, days=7):
-    today = date.today().isoformat()
-    cutoff = (date.today() + timedelta(days=days)).isoformat()
-    db = get_db()
-    overdue_items = db.execute(
-        """
-        SELECT id, condition_description, due_date
-        FROM compliance_items
-        WHERE project_id = ?
-          AND status = 'Pending'
-          AND due_date != ''
-          AND due_date < ?
-        ORDER BY due_date ASC
-        """,
-        (project_id, today),
-    ).fetchall()
-    upcoming_items = db.execute(
-        """
-        SELECT id, condition_description, due_date
-        FROM compliance_items
-        WHERE project_id = ?
-          AND status = 'Pending'
-          AND due_date != ''
-          AND due_date BETWEEN ? AND ?
-        ORDER BY due_date ASC
-        """,
-        (project_id, today, cutoff),
-    ).fetchall()
+def build_project_reminders(items):
+    overdue_items = [
+        {"id": item["id"], "condition_description": item["condition_description"], "due_date": item["display_due_date"]}
+        for item in items
+        if item["status"] == "Pending" and item["derived_status"] == "Overdue"
+    ]
+    upcoming_items = [
+        {"id": item["id"], "condition_description": item["condition_description"], "due_date": item["display_due_date"]}
+        for item in items
+        if item["status"] == "Pending" and item["derived_status"] == "Due in 7 days"
+    ]
     return overdue_items, upcoming_items
 
 
@@ -817,6 +876,7 @@ def logout():
 @login_required
 def dashboard():
     db = get_db()
+    overdue_items, upcoming_items = build_user_reminders(g.user["id"])
     project_count = db.execute(
         "SELECT COUNT(*) AS count FROM projects WHERE user_id = ?", (g.user["id"],)
     ).fetchone()["count"]
@@ -850,10 +910,10 @@ def dashboard():
         pending_count=counts.get("Pending", 0),
         completed_count=counts.get("Completed", 0),
         recent_projects=recent_projects,
-        overdue_items=fetch_overdue_items_for_user(g.user["id"]),
-        upcoming_items=fetch_upcoming_items_for_user(g.user["id"]),
-        overdue_count=count_overdue_items_for_user(g.user["id"]),
-        upcoming_count=count_upcoming_items_for_user(g.user["id"]),
+        overdue_items=overdue_items[:8],
+        upcoming_items=upcoming_items[:8],
+        overdue_count=len(overdue_items),
+        upcoming_count=len(upcoming_items),
     )
 
 
@@ -1020,10 +1080,12 @@ def project_detail(project_id):
     if calendar_view not in CALENDAR_VIEW_OPTIONS:
         calendar_view = 1
 
-    approvals = annotate_approval_rows(fetch_project_approvals(project_id))
-    compliance_items = annotate_compliance_items(fetch_project_compliance_items(project_id))
+    approval_rows = fetch_project_approvals(project_id)
+    approvals = annotate_approval_rows(approval_rows)
+    approval_lookup = build_approval_lookup(approval_rows)
+    compliance_items = annotate_compliance_items(fetch_project_compliance_items(project_id), approval_lookup)
     documents = fetch_project_documents(project_id)
-    overdue_items, upcoming_items = fetch_project_reminders(project_id)
+    overdue_items, upcoming_items = build_project_reminders(compliance_items)
     filtered_items = filter_compliance_items(compliance_items, status_filter, frequency_filter)
     calendar_months = build_project_calendar(project_id, months=calendar_view)
 
@@ -1045,6 +1107,7 @@ def project_detail(project_id):
         calendar_months=calendar_months,
         calendar_view=calendar_view,
         calendar_view_options=CALENDAR_VIEW_OPTIONS,
+        approval_options=["Custom date", *[approval["approval_type"] for approval in approvals]],
     )
 
 
@@ -1068,6 +1131,7 @@ def add_compliance_item(project_id):
     action_to_be_taken = request.form.get("action_to_be_taken", "").strip()
     due_date = request.form.get("due_date", "").strip()
     frequency = request.form.get("frequency", "General").strip()
+    schedule_source = request.form.get("schedule_source", "").strip()
     status = request.form.get("status", "Pending").strip()
 
     error = None
@@ -1075,6 +1139,8 @@ def add_compliance_item(project_id):
         error = "Condition description is required."
     elif frequency not in FREQUENCY_TYPES:
         error = "Invalid frequency."
+    elif schedule_source and schedule_source not in APPROVAL_TYPES:
+        error = "Invalid schedule source."
     elif status not in {"Pending", "Completed"}:
         error = "Invalid status."
 
@@ -1083,10 +1149,18 @@ def add_compliance_item(project_id):
         db.execute(
             """
             INSERT INTO compliance_items
-            (project_id, condition_description, action_to_be_taken, due_date, frequency, status)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (project_id, condition_description, action_to_be_taken, due_date, frequency, schedule_source, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (project["id"], condition_description, action_to_be_taken, due_date, frequency, status),
+            (
+                project["id"],
+                condition_description,
+                action_to_be_taken,
+                due_date,
+                frequency,
+                schedule_source,
+                status,
+            ),
         )
         db.commit()
         flash("Compliance item added.", "success")
@@ -1126,8 +1200,8 @@ def import_compliance_items(project_id):
     db.executemany(
         """
         INSERT INTO compliance_items
-        (project_id, condition_description, action_to_be_taken, due_date, frequency, status)
-        VALUES (?, ?, ?, ?, ?, ?)
+        (project_id, condition_description, action_to_be_taken, due_date, frequency, schedule_source, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -1136,13 +1210,17 @@ def import_compliance_items(project_id):
                 row["action_to_be_taken"],
                 row["due_date"],
                 row["frequency"],
+                row["schedule_source"],
                 row["status"],
             )
             for row in valid_rows
         ],
     )
     db.commit()
-    flash(f"Imported {len(valid_rows)} compliance items into {project['name']}.", "success")
+    flash(
+        f"Imported {len(valid_rows)} compliance items into {project['name']}. Use 'Edit action / due date' on any item to complete the schedule.",
+        "success",
+    )
     return redirect(url_for("project_detail", project_id=project_id))
 
 
@@ -1156,6 +1234,7 @@ def edit_compliance_item(item_id):
         action_to_be_taken = request.form.get("action_to_be_taken", "").strip()
         due_date = request.form.get("due_date", "").strip()
         frequency = request.form.get("frequency", "General").strip()
+        schedule_source = request.form.get("schedule_source", "").strip()
         status = request.form.get("status", "Pending").strip()
 
         error = None
@@ -1163,6 +1242,8 @@ def edit_compliance_item(item_id):
             error = "Condition description is required."
         elif frequency not in FREQUENCY_TYPES:
             error = "Invalid frequency."
+        elif schedule_source and schedule_source not in APPROVAL_TYPES:
+            error = "Invalid schedule source."
         elif status not in {"Pending", "Completed"}:
             error = "Invalid status."
 
@@ -1171,10 +1252,18 @@ def edit_compliance_item(item_id):
             db.execute(
                 """
                 UPDATE compliance_items
-                SET condition_description = ?, action_to_be_taken = ?, due_date = ?, frequency = ?, status = ?
+                SET condition_description = ?, action_to_be_taken = ?, due_date = ?, frequency = ?, schedule_source = ?, status = ?
                 WHERE id = ?
                 """,
-                (condition_description, action_to_be_taken, due_date, frequency, status, item_id),
+                (
+                    condition_description,
+                    action_to_be_taken,
+                    due_date,
+                    frequency,
+                    schedule_source,
+                    status,
+                    item_id,
+                ),
             )
             db.commit()
             flash("Compliance item updated.", "success")
@@ -1183,7 +1272,13 @@ def edit_compliance_item(item_id):
         flash(error, "error")
 
     current_item = get_owned_compliance_item(item_id)
-    return render_template("compliance_form.html", item=current_item, frequency_types=FREQUENCY_TYPES)
+    project_approvals = annotate_approval_rows(fetch_project_approvals(current_item["project_id"]))
+    return render_template(
+        "compliance_form.html",
+        item=current_item,
+        frequency_types=FREQUENCY_TYPES,
+        approval_options=["Custom date", *[approval["approval_type"] for approval in project_approvals]],
+    )
 
 
 @app.post("/compliance/<int:item_id>/delete")

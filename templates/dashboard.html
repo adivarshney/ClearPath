@@ -49,7 +49,7 @@
       <a class="reminder-card danger-card" href="{{ url_for('project_detail', project_id=item['project_id']) }}">
         <strong>{{ item["project_name"] }}</strong>
         <span>{{ item["condition_description"] }}</span>
-        <small>Due {{ item["due_date"] }}</small>
+        <small>Due {{ item["display_due_date"] or item["due_date"] }}</small>
       </a>
       {% endfor %}
     </div>
@@ -71,7 +71,7 @@
       <a class="reminder-card" href="{{ url_for('project_detail', project_id=item['project_id']) }}">
         <strong>{{ item["project_name"] }}</strong>
         <span>{{ item["condition_description"] }}</span>
-        <small>Due {{ item["due_date"] }}</small>
+        <small>Due {{ item["display_due_date"] or item["due_date"] }}</small>
       </a>
       {% endfor %}
     </div>

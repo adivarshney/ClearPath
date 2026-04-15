@@ -35,10 +35,23 @@
       </label>
 
       <label>
-        <span>Due date</span>
+        <span>Custom due date</span>
         <input type="date" name="due_date" value="{{ item['due_date'] }}" />
       </label>
 
+      <label>
+        <span>Schedule from</span>
+        <select name="schedule_source">
+          {% for option in approval_options %}
+          <option value="{% if option == 'Custom date' %}{% else %}{{ option }}{% endif %}" {% if (item['schedule_source'] or 'Custom date') == option %}selected{% endif %}>
+            {% if option == "Custom date" %}Custom date{% else %}{{ option }} grant date{% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+
+    <div class="triple-grid">
       <label>
         <span>Status</span>
         <select name="status">
@@ -48,7 +61,7 @@
       </label>
     </div>
 
-    <p class="muted compact-note">Due date is optional for general or ongoing site conditions.</p>
+    <p class="muted compact-note">Choose an approval grant date for recurring schedules, or keep a custom date for one-time deadlines.</p>
 
     <button type="submit">Update Compliance Item</button>
   </form>

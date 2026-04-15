@@ -43,7 +43,7 @@
                 <a class="notification-item" href="{{ url_for('project_detail', project_id=item['project_id'], status_filter='Due in 7 days') }}">
                   <strong>{{ item["project_name"] }}</strong>
                   <span>{{ item["condition_description"] }}</span>
-                  <small>Due {{ item["due_date"] }}</small>
+                  <small>Due {{ item["display_due_date"] or item["due_date"] }}</small>
                 </a>
                 {% endfor %}
               </div>

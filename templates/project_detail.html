@@ -52,14 +52,28 @@
             <option value="One-time">One-time</option>
             <option value="Monthly">Monthly</option>
             <option value="Quarterly">Quarterly</option>
+            <option value="Half-yearly">Half-yearly</option>
+            <option value="Yearly">Yearly</option>
           </select>
         </label>
 
         <label>
-          <span>Due date</span>
+          <span>Custom due date</span>
           <input type="date" name="due_date" />
         </label>
 
+        <label>
+          <span>Schedule from</span>
+          <select name="schedule_source">
+            <option value="">Custom date</option>
+            {% for approval_type in approval_options[1:] %}
+            <option value="{{ approval_type }}">{{ approval_type }} grant date</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+
+      <div class="triple-grid">
         <label>
           <span>Status</span>
           <select name="status">
@@ -69,7 +83,7 @@
         </label>
       </div>
 
-      <p class="muted compact-note">Leave due date blank for general conditions that do not have a fixed deadline.</p>
+      <p class="muted compact-note">Use a custom date for one-time deadlines, or choose an approval grant date for monthly/quarterly/half-yearly/yearly recurrence.</p>
 
       <button type="submit">Add Compliance Item</button>
     </form>
@@ -286,7 +300,7 @@
         </div>
         <div class="status-stack">
           <span class="status-badge status-{{ item['derived_status']|lower|replace(' ', '-') }}">{{ item["derived_status"] }}</span>
-          <span class="status-badge status-frequency">{{ item["frequency"] }}</span>
+          <span class="status-badge status-frequency">{{ item["schedule_label"] }}</span>
         </div>
       </div>
 
@@ -297,7 +311,7 @@
         </div>
         <div>
           <span class="item-label">Due date</span>
-          <p>{{ item["due_date"] or "No fixed deadline" }}</p>
+          <p>{{ item["display_due_date"] or "No fixed deadline" }}</p>
         </div>
       </div>
 
@@ -317,7 +331,7 @@
       </div>
 
       <div class="action-row">
-        <a href="{{ url_for('edit_compliance_item', item_id=item['id']) }}">Edit item</a>
+        <a href="{{ url_for('edit_compliance_item', item_id=item['id']) }}">Edit action / due date</a>
         <form method="post" action="{{ url_for('delete_compliance_item', item_id=item['id']) }}" onsubmit="return confirm('Delete this compliance item?');">
           <button type="submit" class="text-button danger-text">Delete item</button>
         </form>
