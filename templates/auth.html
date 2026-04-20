@@ -13,6 +13,7 @@
   </div>
 
   <form method="post" class="stack-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
     <label>
       <span>Email</span>
       <input type="email" name="email" required />

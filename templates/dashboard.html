@@ -33,6 +33,14 @@
     <span>Due in 7 Days</span>
     <strong>{{ upcoming_count }}</strong>
   </article>
+  <article class="stat-card">
+    <span>On Hold</span>
+    <strong>{{ on_hold_count }}</strong>
+  </article>
+  <article class="stat-card">
+    <span>Not Applicable</span>
+    <strong>{{ not_applicable_count }}</strong>
+  </article>
 </section>
 
 <section class="grid-two">
@@ -49,7 +57,7 @@
       <a class="reminder-card danger-card" href="{{ url_for('project_detail', project_id=item['project_id']) }}">
         <strong>{{ item["project_name"] }}</strong>
         <span>{{ item["condition_description"] }}</span>
-        <small>Due {{ item["display_due_date"] or item["due_date"] }}</small>
+        <small>Next due {{ item["display_due_date"] or item["due_date"] }}</small>
       </a>
       {% endfor %}
     </div>
@@ -71,7 +79,7 @@
       <a class="reminder-card" href="{{ url_for('project_detail', project_id=item['project_id']) }}">
         <strong>{{ item["project_name"] }}</strong>
         <span>{{ item["condition_description"] }}</span>
-        <small>Due {{ item["display_due_date"] or item["due_date"] }}</small>
+        <small>Next due {{ item["display_due_date"] or item["due_date"] }}</small>
       </a>
       {% endfor %}
     </div>

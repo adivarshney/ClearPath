@@ -16,8 +16,11 @@
       {% endfor %}
     </div>
     <div class="action-row">
+      <a class="secondary-button button-link" href="{{ url_for('export_project_register', project_id=project['id']) }}">Export Register</a>
+      <a class="secondary-button button-link" href="{{ url_for('bulk_edit_project', project_id=project['id']) }}">Bulk Edit</a>
       <a class="secondary-button button-link" href="{{ url_for('edit_project', project_id=project['id']) }}">Edit Project</a>
       <form method="post" action="{{ url_for('delete_project', project_id=project['id']) }}" onsubmit="return confirm('Delete this project and all linked compliance data?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <button type="submit" class="danger-button">Delete Project</button>
       </form>
     </div>
@@ -33,7 +36,8 @@
       </div>
     </div>
 
-    <form method="post" action="{{ url_for('add_compliance_item', project_id=project['id']) }}" class="stack-form">
+    <form method="post" action="{{ url_for('add_compliance_item', project_id=project['id']) }}" class="stack-form schedule-form" data-schedule-preview data-approvals='{{ approval_context|tojson }}'>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       <label>
         <span>Condition description</span>
         <textarea name="condition_description" rows="4" required></textarea>
@@ -47,7 +51,7 @@
       <div class="triple-grid">
         <label>
           <span>Frequency</span>
-          <select name="frequency">
+          <select name="frequency" data-frequency-input>
             <option value="General">General</option>
             <option value="One-time">One-time</option>
             <option value="Monthly">Monthly</option>
@@ -59,14 +63,14 @@
 
         <label>
           <span>Custom due date</span>
-          <input type="date" name="due_date" />
+          <input type="date" name="due_date" data-due-date-input />
         </label>
 
         <label>
           <span>Schedule from</span>
-          <select name="schedule_source">
+          <select name="schedule_source" data-schedule-source-input>
             <option value="">Custom date</option>
-            {% for approval_type in approval_options[1:] %}
+            {% for approval_type in approval_options %}
             <option value="{{ approval_type }}">{{ approval_type }} grant date</option>
             {% endfor %}
           </select>
@@ -79,11 +83,40 @@
           <select name="status">
             <option value="Pending">Pending</option>
             <option value="Completed">Completed</option>
+            <option value="On hold">On hold</option>
+            <option value="Not applicable">Not applicable</option>
+          </select>
+        </label>
+        <label>
+          <span>Submitted to</span>
+          <input type="text" name="submitted_to" placeholder="Authority / office" />
+        </label>
+        <label>
+          <span>Submission mode</span>
+          <select name="submission_mode">
+            {% for option in submission_mode_options %}
+            <option value="{{ option }}">{{ option or "Select mode" }}</option>
+            {% endfor %}
           </select>
         </label>
       </div>
 
-      <p class="muted compact-note">Use a custom date for one-time deadlines, or choose an approval grant date for monthly/quarterly/half-yearly/yearly recurrence.</p>
+      <div class="triple-grid">
+        <label>
+          <span>Responsible person</span>
+          <input type="text" name="responsible_person" placeholder="Consultant or site owner" />
+        </label>
+        <label>
+          <span>Acknowledgment number</span>
+          <input type="text" name="acknowledgment_number" placeholder="Ref. no. / ack. no." />
+        </label>
+        <label>
+          <span>Remarks</span>
+          <input type="text" name="remarks" placeholder="Notes, blockers, or follow-up" />
+        </label>
+      </div>
+
+      <p class="muted compact-note" data-schedule-preview-text>{{ schedule_preview_text }}</p>
 
       <button type="submit">Add Compliance Item</button>
     </form>
@@ -98,12 +131,13 @@
     </div>
 
     <form method="post" action="{{ url_for('import_compliance_items', project_id=project['id']) }}" enctype="multipart/form-data" class="stack-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       <label>
         <span>Import file</span>
         <input type="file" name="import_file" accept=".csv,.xlsx" required />
       </label>
       <p class="muted compact-note">
-        Supported columns: Condition Description, Action To Be Taken, Due Date, Status, Frequency. Single-column condition sheets also work.
+        Supported columns: Condition Description, Action To Be Taken, Due Date, Status, Frequency, Schedule Source, Submitted To, Submission Mode, Responsible Person, Acknowledgment Number, Remarks. Single-column condition sheets also work.
       </p>
       <button type="submit">Import Compliance Items</button>
     </form>
@@ -208,6 +242,9 @@
           <strong>{{ approval["expiry_date"] or "Not set" }}</strong>
         </div>
       </div>
+      {% if approval["approval_notes"] %}
+      <p class="muted compact-note">{{ approval["approval_notes"] }}</p>
+      {% endif %}
     </article>
     {% endfor %}
   </div>
@@ -255,6 +292,32 @@
     <p class="muted">No upcoming items due in the next 7 days.</p>
     {% endif %}
   </article>
+</section>
+
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h2>Recent activity</h2>
+      <p class="muted">A quick audit trail of item updates, status changes, imports, and proof uploads.</p>
+    </div>
+  </div>
+
+  {% if recent_history %}
+  <div class="activity-list">
+    {% for entry in recent_history %}
+    <article class="activity-card">
+      <strong>{{ entry["change_type"]|replace('_', ' ')|title }}</strong>
+      <span>{{ entry["item_snapshot"] or "Compliance item" }}</span>
+      {% if entry["field_label"] %}
+      <small>{{ entry["field_label"] }}{% if entry["new_value"] %}: {{ entry["new_value"] }}{% endif %}</small>
+      {% endif %}
+      <small>{{ entry["actor_email"] or "ClearPath" }} • {{ entry["changed_at"] }}</small>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted">No activity recorded yet.</p>
+  {% endif %}
 </section>
 
 <section class="panel">
@@ -310,21 +373,54 @@
           <p>{{ item["action_to_be_taken"] or "No action specified yet." }}</p>
         </div>
         <div>
-          <span class="item-label">Due date</span>
+          <span class="item-label">Next due</span>
           <p>{{ item["display_due_date"] or "No fixed deadline" }}</p>
+        </div>
+        <div>
+          <span class="item-label">Submitted to</span>
+          <p>{{ item["submitted_to"] or "Not captured yet." }}</p>
+        </div>
+        <div>
+          <span class="item-label">Submission mode</span>
+          <p>{{ item["submission_mode"] or "Not set" }}</p>
+        </div>
+      </div>
+
+      <div class="compliance-meta">
+        <div>
+          <span class="item-label">Responsible person</span>
+          <p>{{ item["responsible_person"] or "Not assigned yet." }}</p>
+        </div>
+        <div>
+          <span class="item-label">Acknowledgment number</span>
+          <p>{{ item["acknowledgment_number"] or "Not available" }}</p>
+        </div>
+        <div>
+          <span class="item-label">Remarks</span>
+          <p>{{ item["remarks"] or "No remarks added." }}</p>
+        </div>
+        <div>
+          <span class="item-label">Documents</span>
+          <p>{{ item["document_count"] }} linked</p>
         </div>
       </div>
 
       <div class="compliance-actions">
         <form method="post" action="{{ url_for('update_compliance_status', item_id=item['id']) }}" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
           <select name="status">
             <option value="Pending" {% if item["status"] == "Pending" %}selected{% endif %}>Pending</option>
             <option value="Completed" {% if item["status"] == "Completed" %}selected{% endif %}>Completed</option>
+            <option value="On hold" {% if item["status"] == "On hold" %}selected{% endif %}>On hold</option>
+            <option value="Not applicable" {% if item["status"] == "Not applicable" %}selected{% endif %}>Not applicable</option>
           </select>
           <button type="submit" class="secondary-button">Update Status</button>
         </form>
 
-        <form method="post" action="{{ url_for('upload_document', item_id=item['id']) }}" enctype="multipart/form-data" class="inline-form">
+        <form method="post" action="{{ url_for('upload_document', item_id=item['id']) }}" enctype="multipart/form-data" class="stack-form document-upload-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+          <input type="text" name="document_title" placeholder="Document title" />
+          <input type="text" name="version_notes" placeholder="Version notes / remarks" />
           <input type="file" name="document" accept=".pdf,image/*" required />
           <button type="submit" class="secondary-button">Upload Proof</button>
         </form>
@@ -333,6 +429,7 @@
       <div class="action-row">
         <a href="{{ url_for('edit_compliance_item', item_id=item['id']) }}">Edit action / due date</a>
         <form method="post" action="{{ url_for('delete_compliance_item', item_id=item['id']) }}" onsubmit="return confirm('Delete this compliance item?');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
           <button type="submit" class="text-button danger-text">Delete item</button>
         </form>
       </div>
@@ -342,7 +439,7 @@
         {% if documents_by_item.get(item["id"]) %}
           {% for document in documents_by_item[item["id"]] %}
           <a href="{{ url_for('view_document', document_id=document['id']) }}" target="_blank" rel="noopener noreferrer">
-            {{ document["original_filename"] }}
+            {{ document["document_title"] or document["original_filename"] }}{% if document["version_notes"] %} • {{ document["version_notes"] }}{% endif %}
           </a>
           {% endfor %}
         {% else %}

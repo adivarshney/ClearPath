@@ -312,7 +312,8 @@ label {
 .summary-list,
 .compliance-list,
 .document-list,
-.reminder-list {
+.reminder-list,
+.activity-list {
   display: grid;
   gap: 1rem;
 }
@@ -431,6 +432,10 @@ h3 {
 
 .table-wrap {
   overflow-x: auto;
+}
+
+.bulk-edit-table {
+  min-width: 980px;
 }
 
 table {
@@ -660,6 +665,16 @@ th {
   color: var(--success);
 }
 
+.status-on-hold {
+  background: #f3f0ff;
+  color: #6554c0;
+}
+
+.status-not-applicable {
+  background: #f0f2f5;
+  color: #596780;
+}
+
 .status-overdue,
 .status-expired {
   background: var(--danger-soft);
@@ -712,12 +727,29 @@ th {
 
 .compliance-meta {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(180px, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1rem;
 }
 
 .document-list a {
   color: var(--accent);
+}
+
+.document-upload-form {
+  min-width: min(100%, 340px);
+}
+
+.activity-card {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+}
+
+.activity-card small {
+  color: var(--muted);
 }
 
 select[multiple] {
@@ -731,14 +763,17 @@ select[multiple] {
 @media (max-width: 1080px) {
   .stats-grid,
   .grid-two,
-  .triple-grid,
-  .compliance-meta {
+  .triple-grid {
     grid-template-columns: 1fr;
   }
 
   .calendar-view-3,
   .calendar-view-2 {
     grid-template-columns: 1fr;
+  }
+
+  .compliance-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -794,5 +829,9 @@ select[multiple] {
   .calendar-event {
     font-size: 0.64rem;
     padding: 0.26rem 0.32rem;
+  }
+
+  .compliance-meta {
+    grid-template-columns: 1fr;
   }
 }

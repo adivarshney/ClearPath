@@ -13,6 +13,7 @@
 
 <section class="panel form-panel">
   <form method="post" action="{{ form_action }}" class="stack-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
     <label>
       <span>Project name</span>
       <input type="text" name="name" value="{{ request.form.get('name', project['name'] if project else '') }}" required />
@@ -47,6 +48,10 @@
           <label>
             <span>Expiry date</span>
             <input type="date" name="expiry_date_{{ approval['approval_type'] }}" value="{{ approval['expiry_date'] }}" />
+          </label>
+          <label>
+            <span>Approval notes</span>
+            <textarea name="approval_notes_{{ approval['approval_type'] }}" rows="3" placeholder="State-specific renewal rules, reporting notes, consultant reminders...">{{ approval['approval_notes'] }}</textarea>
           </label>
         </article>
         {% endfor %}

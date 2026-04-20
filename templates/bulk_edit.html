@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Bulk Edit | ClearPath{% endblock %}
+
+{% block content %}
+<section class="page-header">
+  <div>
+    <span class="eyebrow">Bulk Edit</span>
+    <h1>{{ project["name"] }}</h1>
+    <p class="muted">Tighten imported actions, dates, and recurring schedules in one pass.</p>
+  </div>
+  <a class="secondary-button button-link" href="{{ url_for('project_detail', project_id=project['id']) }}">Back to Project</a>
+</section>
+
+<section class="panel">
+  {% if items %}
+  <form method="post" action="{{ url_for('save_bulk_edit_project', project_id=project['id']) }}" class="stack-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+    <div class="table-wrap">
+      <table class="bulk-edit-table">
+        <thead>
+          <tr>
+            <th>Condition</th>
+            <th>Action</th>
+            <th>Due Date</th>
+            <th>Frequency</th>
+            <th>Schedule Source</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+          <tr>
+            <td>{{ item["condition_description"] }}</td>
+            <td>
+              <textarea name="action_to_be_taken_{{ item['id'] }}" rows="3">{{ item["action_to_be_taken"] }}</textarea>
+            </td>
+            <td>
+              <input type="date" name="due_date_{{ item['id'] }}" value="{{ item['due_date'] }}" />
+            </td>
+            <td>
+              <select name="frequency_{{ item['id'] }}">
+                {% for frequency in frequency_types %}
+                <option value="{{ frequency }}" {% if item["frequency"] == frequency %}selected{% endif %}>{{ frequency }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td>
+              <select name="schedule_source_{{ item['id'] }}">
+                <option value="">Custom date</option>
+                {% for option in approval_options %}
+                <option value="{{ option }}" {% if item["schedule_source"] == option %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td>
+              <select name="status_{{ item['id'] }}">
+                {% for status in lifecycle_statuses %}
+                <option value="{{ status }}" {% if item["status"] == status %}selected{% endif %}>{{ status }}</option>
+                {% endfor %}
+              </select>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button type="submit">Save Bulk Updates</button>
+  </form>
+  {% else %}
+  <div class="empty-state">
+    <h3>No compliance items yet</h3>
+    <p>Add or import conditions first, then use bulk edit to refine them quickly.</p>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

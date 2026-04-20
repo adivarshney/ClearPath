@@ -54,6 +54,7 @@
           </details>
           <span class="user-chip">{{ g.user["email"] }}</span>
           <form method="post" action="{{ url_for('logout') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
             <button type="submit" class="secondary-button">Log out</button>
           </form>
         </div>
@@ -74,5 +75,94 @@
 
         {% block content %}{% endblock %}
     </main>
+
+    <script>
+      document.querySelectorAll("[data-schedule-preview]").forEach((container) => {
+        const frequencyField = container.querySelector("[data-frequency-input]");
+        const dueDateField = container.querySelector("[data-due-date-input]");
+        const scheduleSourceField = container.querySelector("[data-schedule-source-input]");
+        const previewField = container.querySelector("[data-schedule-preview-text]");
+        const approvalContext = JSON.parse(container.dataset.approvals || "[]");
+
+        const addMonths = (isoDate, months) => {
+          const [year, month, day] = isoDate.split("-").map(Number);
+          const next = new Date(year, month - 1 + months, 1);
+          const maxDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+          const safeDay = Math.min(day, maxDay);
+          return new Date(next.getFullYear(), next.getMonth(), safeDay).toISOString().slice(0, 10);
+        };
+
+        const approvalMap = Object.fromEntries(
+          approvalContext.map((approval) => [approval.approval_type, approval])
+        );
+
+        const intervalMap = {
+          Monthly: 1,
+          Quarterly: 3,
+          "Half-yearly": 6,
+          Yearly: 12,
+        };
+
+        const updatePreview = () => {
+          if (!previewField || !frequencyField) {
+            return;
+          }
+
+          const frequency = frequencyField.value;
+          const dueDate = dueDateField ? dueDateField.value : "";
+          const scheduleSource = scheduleSourceField ? scheduleSourceField.value : "";
+
+          if (frequency === "General") {
+            previewField.textContent = "No recurring schedule. Use this for general site conditions without a deadline.";
+            return;
+          }
+
+          if (frequency === "One-time") {
+            previewField.textContent = dueDate ? `One-time deadline on ${dueDate}.` : "One-time item with no date selected yet.";
+            return;
+          }
+
+          const interval = intervalMap[frequency];
+          let anchorDate = dueDate;
+          let endDate = "";
+          if (scheduleSource && approvalMap[scheduleSource]) {
+            anchorDate = approvalMap[scheduleSource].issue_date || "";
+            endDate = approvalMap[scheduleSource].expiry_date || "";
+          }
+
+          if (!anchorDate) {
+            const anchorLabel = scheduleSource || "a starting date";
+            previewField.textContent = `Select ${anchorLabel} issue date or a custom date to preview the recurring schedule.`;
+            return;
+          }
+
+          const dates = [];
+          let occurrence = anchorDate;
+          while (dates.length < 4) {
+            if (endDate && occurrence > endDate) {
+              break;
+            }
+            dates.push(occurrence);
+            occurrence = addMonths(occurrence, interval);
+          }
+
+          if (!dates.length) {
+            previewField.textContent = "No recurring dates fall inside the selected approval validity window.";
+            return;
+          }
+
+          previewField.textContent = `Upcoming schedule: ${dates.join(", ")}${endDate ? ` until ${endDate}` : ""}.`;
+        };
+
+        [frequencyField, dueDateField, scheduleSourceField].forEach((field) => {
+          if (field) {
+            field.addEventListener("change", updatePreview);
+            field.addEventListener("input", updatePreview);
+          }
+        });
+
+        updatePreview();
+      });
+    </script>
   </body>
 </html>

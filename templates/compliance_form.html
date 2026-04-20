@@ -13,7 +13,8 @@
 </section>
 
 <section class="panel form-panel">
-  <form method="post" class="stack-form">
+  <form method="post" class="stack-form schedule-form" data-schedule-preview data-approvals='{{ approval_context|tojson }}'>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
     <label>
       <span>Condition description</span>
       <textarea name="condition_description" rows="4" required>{{ item["condition_description"] }}</textarea>
@@ -27,7 +28,7 @@
     <div class="triple-grid">
       <label>
         <span>Frequency</span>
-        <select name="frequency">
+        <select name="frequency" data-frequency-input>
           {% for frequency in frequency_types %}
           <option value="{{ frequency }}" {% if item["frequency"] == frequency %}selected{% endif %}>{{ frequency }}</option>
           {% endfor %}
@@ -36,16 +37,15 @@
 
       <label>
         <span>Custom due date</span>
-        <input type="date" name="due_date" value="{{ item['due_date'] }}" />
+        <input type="date" name="due_date" value="{{ item['due_date'] }}" data-due-date-input />
       </label>
 
       <label>
         <span>Schedule from</span>
-        <select name="schedule_source">
+        <select name="schedule_source" data-schedule-source-input>
+          <option value="">Custom date</option>
           {% for option in approval_options %}
-          <option value="{% if option == 'Custom date' %}{% else %}{{ option }}{% endif %}" {% if (item['schedule_source'] or 'Custom date') == option %}selected{% endif %}>
-            {% if option == "Custom date" %}Custom date{% else %}{{ option }} grant date{% endif %}
-          </option>
+          <option value="{{ option }}" {% if item['schedule_source'] == option %}selected{% endif %}>{{ option }} grant date</option>
           {% endfor %}
         </select>
       </label>
@@ -57,11 +57,40 @@
         <select name="status">
           <option value="Pending" {% if item["status"] == "Pending" %}selected{% endif %}>Pending</option>
           <option value="Completed" {% if item["status"] == "Completed" %}selected{% endif %}>Completed</option>
+          <option value="On hold" {% if item["status"] == "On hold" %}selected{% endif %}>On hold</option>
+          <option value="Not applicable" {% if item["status"] == "Not applicable" %}selected{% endif %}>Not applicable</option>
+        </select>
+      </label>
+      <label>
+        <span>Submitted to</span>
+        <input type="text" name="submitted_to" value="{{ item['submitted_to'] }}" />
+      </label>
+      <label>
+        <span>Submission mode</span>
+        <select name="submission_mode">
+          {% for option in submission_mode_options %}
+          <option value="{{ option }}" {% if item["submission_mode"] == option %}selected{% endif %}>{{ option or "Select mode" }}</option>
+          {% endfor %}
         </select>
       </label>
     </div>
 
-    <p class="muted compact-note">Choose an approval grant date for recurring schedules, or keep a custom date for one-time deadlines.</p>
+    <div class="triple-grid">
+      <label>
+        <span>Responsible person</span>
+        <input type="text" name="responsible_person" value="{{ item['responsible_person'] }}" />
+      </label>
+      <label>
+        <span>Acknowledgment number</span>
+        <input type="text" name="acknowledgment_number" value="{{ item['acknowledgment_number'] }}" />
+      </label>
+      <label>
+        <span>Remarks</span>
+        <input type="text" name="remarks" value="{{ item['remarks'] }}" />
+      </label>
+    </div>
+
+    <p class="muted compact-note" data-schedule-preview-text>{{ schedule_preview_text }}</p>
 
     <button type="submit">Update Compliance Item</button>
   </form>
