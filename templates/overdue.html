@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Overdue | ClearPath{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb">
+  <a href="{{ url_for('dashboard') }}">Dashboard</a>
+  <span>›</span>
+  <span>Overdue</span>
+</nav>
+
+<section class="screen-head">
+  <div>
+    <h1>Overdue conditions</h1>
+    <p class="subtle-copy">{{ total_count }} conditions across {{ project_count }} projects are past their due date</p>
+  </div>
+</section>
+
+<section class="stack-section">
+  {% for project in grouped_projects %}
+  <article class="grouped-list-card">
+    <div class="grouped-list-head">
+      <div>
+        <strong>{{ project["project_name"] }}</strong>
+        <p>{{ project["project_location"] }}</p>
+      </div>
+      <span class="mini-pill pill-overdue">{{ project["overdue_count"] }} overdue</span>
+    </div>
+    <div class="grouped-items">
+      {% for item in project["items"] %}
+      <a class="overview-item-row state-overdue" href="{{ url_for('project_detail', project_id=item['project_id']) }}">
+        <div>
+          <strong>{{ item["condition_description"] }}</strong>
+          <p>{{ item["project_name"] }}</p>
+        </div>
+        <div class="overview-meta">
+          <span>{{ item["display_due_date"] }}</span>
+          <span class="mini-pill pill-overdue">Overdue</span>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </article>
+  {% else %}
+  <div class="empty-state">
+    <h3>No overdue conditions</h3>
+    <p>Everything is clear right now.</p>
+  </div>
+  {% endfor %}
+</section>
+{% endblock %}

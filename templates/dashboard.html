@@ -3,129 +3,66 @@
 {% block title %}Dashboard | ClearPath{% endblock %}
 
 {% block content %}
-<section class="page-header">
+<section class="screen-head">
   <div>
-    <span class="eyebrow">Overview</span>
-    <h1>Compliance dashboard</h1>
-    <p class="muted">A calmer view of project volume, open work, and deadlines that need attention.</p>
+    <h1>Good morning, {{ g.user["email"].split("@")[0]|title }}</h1>
+    <p class="subtle-copy">{{ overdue_count }} items overdue · {{ upcoming_count }} due this week</p>
   </div>
-  <a class="button-link" href="{{ url_for('new_project') }}">Add New Project</a>
+  <a class="primary-button" href="{{ url_for('new_project') }}">+ New project</a>
 </section>
 
-<section class="stats-grid">
-  <article class="stat-card">
-    <span>Total Projects</span>
+<section class="stats-row">
+  <article class="metric-card">
+    <span>Projects</span>
     <strong>{{ project_count }}</strong>
   </article>
-  <article class="stat-card">
-    <span>Pending Compliance Items</span>
+  <article class="metric-card metric-amber">
+    <span>Pending</span>
     <strong>{{ pending_count }}</strong>
   </article>
-  <article class="stat-card">
-    <span>Completed Compliance Items</span>
-    <strong>{{ completed_count }}</strong>
-  </article>
-  <article class="stat-card">
-    <span>Overdue Items</span>
+  <article class="metric-card metric-red">
+    <span>Overdue</span>
     <strong>{{ overdue_count }}</strong>
   </article>
-  <article class="stat-card">
-    <span>Due in 7 Days</span>
-    <strong>{{ upcoming_count }}</strong>
-  </article>
-  <article class="stat-card">
-    <span>On Hold</span>
-    <strong>{{ on_hold_count }}</strong>
-  </article>
-  <article class="stat-card">
-    <span>Not Applicable</span>
-    <strong>{{ not_applicable_count }}</strong>
+  <article class="metric-card metric-green">
+    <span>Completed</span>
+    <strong>{{ completed_count }}</strong>
   </article>
 </section>
 
-<section class="grid-two">
-  <article class="panel">
-    <div class="panel-header">
-      <div>
-        <h2>Overdue now</h2>
-        <p class="muted">Pending items already past their due date.</p>
-      </div>
-    </div>
-    {% if overdue_items %}
-    <div class="reminder-list">
-      {% for item in overdue_items %}
-      <a class="reminder-card danger-card" href="{{ url_for('project_detail', project_id=item['project_id']) }}">
-        <strong>{{ item["project_name"] }}</strong>
-        <span>{{ item["condition_description"] }}</span>
-        <small>Next due {{ item["display_due_date"] or item["due_date"] }}</small>
-      </a>
-      {% endfor %}
-    </div>
-    {% else %}
-    <p class="muted">No overdue pending items.</p>
-    {% endif %}
-  </article>
-
-  <article class="panel">
-    <div class="panel-header">
-      <div>
-        <h2>Due in 7 days</h2>
-        <p class="muted">Upcoming pending items that need attention soon.</p>
-      </div>
-    </div>
-    {% if upcoming_items %}
-    <div class="reminder-list">
-      {% for item in upcoming_items %}
-      <a class="reminder-card" href="{{ url_for('project_detail', project_id=item['project_id']) }}">
-        <strong>{{ item["project_name"] }}</strong>
-        <span>{{ item["condition_description"] }}</span>
-        <small>Next due {{ item["display_due_date"] or item["due_date"] }}</small>
-      </a>
-      {% endfor %}
-    </div>
-    {% else %}
-    <p class="muted">No upcoming pending items in the next 7 days.</p>
-    {% endif %}
-  </article>
-</section>
-
-<section class="panel">
-  <div class="panel-header">
+<section class="section-block">
+  <div class="section-heading-row">
     <div>
       <h2>Recent projects</h2>
-      <p class="muted">Your latest compliance workspaces.</p>
+      <p class="subtle-copy">Latest project workspaces across your portfolio.</p>
     </div>
-    <a href="{{ url_for('projects') }}">View all</a>
   </div>
 
   {% if recent_projects %}
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Project</th>
-          <th>Client</th>
-          <th>Location</th>
-          <th>Compliance Items</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for project in recent_projects %}
-        <tr>
-          <td><a href="{{ url_for('project_detail', project_id=project['id']) }}">{{ project["name"] }}</a></td>
-          <td>{{ project["client_name"] }}</td>
-          <td>{{ project["location"] }}</td>
-          <td>{{ project["compliance_count"] }}</td>
-        </tr>
+  <div class="project-list">
+    {% for project in recent_projects %}
+    <a class="project-row-card" href="{{ url_for('project_detail', project_id=project['id']) }}">
+      <div>
+        <strong>{{ project["name"] }}</strong>
+        <p>{{ project["location"] }} · {{ project["compliance_count"] }} conditions</p>
+      </div>
+      <div class="row-pill-set">
+        {% for approval_type in project["approval_types"] %}
+        <span class="mini-pill pill-{{ approval_type|lower|replace(' ', '-') }}">{{ approval_type }}</span>
         {% endfor %}
-      </tbody>
-    </table>
+        {% if project["overdue_count"] %}
+        <span class="mini-pill pill-overdue">{{ project["overdue_count"] }} overdue</span>
+        {% elif project["all_clear"] %}
+        <span class="mini-pill pill-clear">All clear</span>
+        {% endif %}
+      </div>
+    </a>
+    {% endfor %}
   </div>
   {% else %}
   <div class="empty-state">
     <h3>No projects yet</h3>
     <p>Start by adding your first project and its approvals.</p>
-    <a class="button-link" href="{{ url_for('new_project') }}">Create Project</a>
   </div>
   {% endif %}
 </section>

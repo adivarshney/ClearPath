@@ -3,49 +3,51 @@
 {% block title %}Projects | ClearPath{% endblock %}
 
 {% block content %}
-<section class="page-header">
+<nav class="breadcrumb">
+  <a href="{{ url_for('dashboard') }}">Dashboard</a>
+  <span>›</span>
+  <span>{% if approval_filter %}{{ approval_filter }} — All projects{% else %}Projects{% endif %}</span>
+</nav>
+
+<section class="screen-head">
   <div>
-    <span class="eyebrow">Projects</span>
-    <h1>All projects</h1>
-    <p class="muted">Each project keeps approvals, conditions, deadlines, and proof together.</p>
+    <h1>{% if approval_filter %}{{ approval_filter }} projects{% else %}All projects{% endif %}</h1>
+    <p class="subtle-copy">
+      {% if approval_filter %}
+      Projects currently tagged with {{ approval_filter }} approval.
+      {% else %}
+      Each project keeps approvals, conditions, deadlines, and proof together.
+      {% endif %}
+    </p>
   </div>
-  <a class="button-link" href="{{ url_for('new_project') }}">Add Project</a>
+  <a class="primary-button" href="{{ url_for('new_project') }}">+ New project</a>
 </section>
 
-<section class="panel">
-  {% if projects %}
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Project</th>
-          <th>Client</th>
-          <th>Location</th>
-          <th>Total Items</th>
-          <th>Pending</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for project in projects %}
-        <tr>
-          <td><a href="{{ url_for('project_detail', project_id=project['id']) }}">{{ project["name"] }}</a></td>
-          <td>{{ project["client_name"] }}</td>
-          <td>{{ project["location"] }}</td>
-          <td>{{ project["compliance_count"] }}</td>
-          <td>{{ project["pending_count"] or 0 }}</td>
-          <td><a href="{{ url_for('edit_project', project_id=project['id']) }}">Edit</a></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <div class="empty-state">
-    <h3>No projects found</h3>
-    <p>Add your first project to begin tracking compliance conditions.</p>
-    <a class="button-link" href="{{ url_for('new_project') }}">Create Project</a>
-  </div>
-  {% endif %}
+{% if projects %}
+<section class="project-list">
+  {% for project in projects %}
+  <a class="project-row-card" href="{{ url_for('project_detail', project_id=project['id']) }}">
+    <div>
+      <strong>{{ project["name"] }}</strong>
+      <p>{{ project["location"] }} · {{ project["compliance_count"] }} conditions</p>
+    </div>
+    <div class="row-pill-set">
+      {% for approval_type in project["approval_types"] %}
+      <span class="mini-pill pill-{{ approval_type|lower|replace(' ', '-') }}">{{ approval_type }}</span>
+      {% endfor %}
+      {% if project["overdue_count"] %}
+      <span class="mini-pill pill-overdue">{{ project["overdue_count"] }} overdue</span>
+      {% elif project["all_clear"] %}
+      <span class="mini-pill pill-clear">All clear</span>
+      {% endif %}
+    </div>
+  </a>
+  {% endfor %}
 </section>
+{% else %}
+<div class="empty-state">
+  <h3>No projects found</h3>
+  <p>{% if approval_filter %}No projects with {{ approval_filter }} have been added yet.{% else %}Add your first project to begin tracking compliance conditions.{% endif %}</p>
+</div>
+{% endif %}
 {% endblock %}

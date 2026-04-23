@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Upcoming | ClearPath{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb">
+  <a href="{{ url_for('dashboard') }}">Dashboard</a>
+  <span>›</span>
+  <span>Upcoming</span>
+</nav>
+
+<section class="screen-head">
+  <div>
+    <h1>Upcoming conditions</h1>
+    <p class="subtle-copy">{{ total_count }} conditions due across {{ project_count }} projects in the next {{ selected_window }} days</p>
+  </div>
+</section>
+
+<div class="filter-group filter-bar-space">
+  {% for option in window_options %}
+  <a class="mini-pill tiny-filter {% if option == selected_window %}selected{% endif %}" href="{{ url_for('upcoming_view', days=option) }}">Next {{ option }} days</a>
+  {% endfor %}
+</div>
+
+<section class="stack-section">
+  {% for project in grouped_projects %}
+  <article class="grouped-list-card">
+    <div class="grouped-list-head">
+      <div>
+        <strong>{{ project["project_name"] }}</strong>
+        <p>{{ project["project_location"] }}</p>
+      </div>
+      <div class="row-pill-set">
+        {% if project["due_soon_count"] %}
+        <span class="mini-pill pill-warning">{{ project["due_soon_count"] }} due soon</span>
+        {% endif %}
+        {% if project["upcoming_count"] %}
+        <span class="mini-pill pill-clear">{{ project["upcoming_count"] }} upcoming</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="grouped-items">
+      {% for item in project["items"] %}
+      <a class="overview-item-row {% if item['derived_status'] == 'Due in 7 days' %}state-due-in-7-days{% else %}state-pending{% endif %}" href="{{ url_for('project_detail', project_id=item['project_id']) }}">
+        <div>
+          <strong>{{ item["condition_description"] }}</strong>
+          <p>{{ item["project_name"] }}</p>
+        </div>
+        <div class="overview-meta">
+          <span>{{ item["display_due_date"] }}</span>
+          <span class="mini-pill {% if item['derived_status'] == 'Due in 7 days' %}pill-warning{% else %}pill-clear{% endif %}">{{ item["derived_status"] }}</span>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </article>
+  {% else %}
+  <div class="empty-state">
+    <h3>No upcoming conditions</h3>
+    <p>Nothing is due inside the selected window.</p>
+  </div>
+  {% endfor %}
+</section>
+{% endblock %}

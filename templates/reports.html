@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Reports | ClearPath{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb">
+  <a href="{{ url_for('dashboard') }}">Dashboard</a>
+  <span>›</span>
+  <span>Reports</span>
+</nav>
+
+<section class="screen-head">
+  <div>
+    <h1>Reports</h1>
+    <p class="subtle-copy">Project-level export shortcuts for consultant review and sharing.</p>
+  </div>
+</section>
+
+<section class="project-list">
+  {% for project in projects %}
+  <article class="project-row-card report-row">
+    <div>
+      <strong>{{ project["name"] }}</strong>
+      <p>{{ project["location"] }} · {{ project["compliance_count"] }} conditions</p>
+    </div>
+    <div class="toolbar-actions">
+      <a class="secondary-button button-link" href="{{ url_for('project_detail', project_id=project['id']) }}">Open</a>
+      <a class="primary-button" href="{{ url_for('export_project_register', project_id=project['id']) }}">Export</a>
+    </div>
+  </article>
+  {% else %}
+  <div class="empty-state">
+    <h3>No reports available</h3>
+    <p>Create a project first, then export its compliance register from here.</p>
+  </div>
+  {% endfor %}
+</section>
+{% endblock %}

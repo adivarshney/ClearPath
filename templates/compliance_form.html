@@ -3,29 +3,30 @@
 {% block title %}Edit Compliance Item | ClearPath{% endblock %}
 
 {% block content %}
-<section class="page-header">
+<nav class="breadcrumb">
+  <a href="{{ url_for('dashboard') }}">Dashboard</a>
+  <span>›</span>
+  <a href="{{ url_for('projects') }}">Projects</a>
+  <span>›</span>
+  <a href="{{ url_for('project_detail', project_id=item['project_id']) }}">{{ item["project_name"] }}</a>
+  <span>›</span>
+  <span>Edit condition</span>
+</nav>
+
+<section class="screen-head">
   <div>
-    <span class="eyebrow">Compliance Item</span>
-    <h1>Edit compliance item</h1>
-    <p class="muted">Adjust the condition text, due date, action, or current status.</p>
+    <h1>Edit condition</h1>
+    <p class="subtle-copy">Adjust due date, action, status, and follow-up metadata.</p>
   </div>
-  <a class="secondary-button button-link" href="{{ url_for('project_detail', project_id=item['project_id']) }}">Back to Project</a>
 </section>
 
-<section class="panel form-panel">
+<section class="flat-panel">
   <form method="post" class="stack-form schedule-form" data-schedule-preview data-approvals='{{ approval_context|tojson }}'>
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-    <label>
-      <span>Condition description</span>
-      <textarea name="condition_description" rows="4" required>{{ item["condition_description"] }}</textarea>
-    </label>
+    <label><span>Condition description</span><textarea name="condition_description" rows="4" required>{{ item["condition_description"] }}</textarea></label>
+    <label><span>Action to be taken</span><textarea name="action_to_be_taken" rows="3">{{ item["action_to_be_taken"] }}</textarea></label>
 
-    <label>
-      <span>Action to be taken</span>
-      <textarea name="action_to_be_taken" rows="3">{{ item["action_to_be_taken"] }}</textarea>
-    </label>
-
-    <div class="triple-grid">
+    <div class="three-column-form">
       <label>
         <span>Frequency</span>
         <select name="frequency" data-frequency-input>
@@ -34,12 +35,7 @@
           {% endfor %}
         </select>
       </label>
-
-      <label>
-        <span>Custom due date</span>
-        <input type="date" name="due_date" value="{{ item['due_date'] }}" data-due-date-input />
-      </label>
-
+      <label><span>Custom due date</span><input type="date" name="due_date" value="{{ item['due_date'] }}" data-due-date-input /></label>
       <label>
         <span>Schedule from</span>
         <select name="schedule_source" data-schedule-source-input>
@@ -51,20 +47,16 @@
       </label>
     </div>
 
-    <div class="triple-grid">
+    <div class="three-column-form">
       <label>
         <span>Status</span>
         <select name="status">
-          <option value="Pending" {% if item["status"] == "Pending" %}selected{% endif %}>Pending</option>
-          <option value="Completed" {% if item["status"] == "Completed" %}selected{% endif %}>Completed</option>
-          <option value="On hold" {% if item["status"] == "On hold" %}selected{% endif %}>On hold</option>
-          <option value="Not applicable" {% if item["status"] == "Not applicable" %}selected{% endif %}>Not applicable</option>
+          {% for status in lifecycle_statuses %}
+          <option value="{{ status }}" {% if item["status"] == status %}selected{% endif %}>{{ status }}</option>
+          {% endfor %}
         </select>
       </label>
-      <label>
-        <span>Submitted to</span>
-        <input type="text" name="submitted_to" value="{{ item['submitted_to'] }}" />
-      </label>
+      <label><span>Submitted to</span><input type="text" name="submitted_to" value="{{ item['submitted_to'] }}" /></label>
       <label>
         <span>Submission mode</span>
         <select name="submission_mode">
@@ -75,24 +67,18 @@
       </label>
     </div>
 
-    <div class="triple-grid">
-      <label>
-        <span>Responsible person</span>
-        <input type="text" name="responsible_person" value="{{ item['responsible_person'] }}" />
-      </label>
-      <label>
-        <span>Acknowledgment number</span>
-        <input type="text" name="acknowledgment_number" value="{{ item['acknowledgment_number'] }}" />
-      </label>
-      <label>
-        <span>Remarks</span>
-        <input type="text" name="remarks" value="{{ item['remarks'] }}" />
-      </label>
+    <div class="three-column-form">
+      <label><span>Responsible person</span><input type="text" name="responsible_person" value="{{ item['responsible_person'] }}" /></label>
+      <label><span>Acknowledgment number</span><input type="text" name="acknowledgment_number" value="{{ item['acknowledgment_number'] }}" /></label>
+      <label><span>Remarks</span><input type="text" name="remarks" value="{{ item['remarks'] }}" /></label>
     </div>
 
-    <p class="muted compact-note" data-schedule-preview-text>{{ schedule_preview_text }}</p>
+    <p class="subtle-copy" data-schedule-preview-text>{{ schedule_preview_text }}</p>
 
-    <button type="submit">Update Compliance Item</button>
+    <div class="form-actions">
+      <a class="secondary-button button-link" href="{{ url_for('project_detail', project_id=item['project_id']) }}">Cancel</a>
+      <button type="submit" class="primary-button">Save changes</button>
+    </div>
   </form>
 </section>
 {% endblock %}

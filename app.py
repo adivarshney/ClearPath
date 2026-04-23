@@ -1069,7 +1069,7 @@ def fetch_user_approval_rows(user_id):
 def fetch_user_compliance_rows(user_id):
     return get_db().execute(
         """
-        SELECT ci.*, p.name AS project_name
+        SELECT ci.*, p.name AS project_name, p.location AS project_location, p.client_name
         FROM compliance_items ci
         JOIN projects p ON p.id = ci.project_id
         WHERE p.user_id = ?
@@ -1126,6 +1126,141 @@ def build_project_reminders(items):
         if item["status"] == "Pending" and item["derived_status"] == "Due in 7 days"
     ]
     return overdue_items, upcoming_items
+
+
+def fetch_user_documents(user_id):
+    return get_db().execute(
+        """
+        SELECT d.*, ci.project_id, p.name AS project_name, p.location AS project_location
+        FROM documents d
+        JOIN compliance_items ci ON ci.id = d.compliance_item_id
+        JOIN projects p ON p.id = ci.project_id
+        WHERE p.user_id = ?
+        ORDER BY d.uploaded_at DESC
+        """,
+        (user_id,),
+    ).fetchall()
+
+
+def build_project_cards(user_id, approval_filter=None):
+    project_rows = get_db().execute(
+        """
+        SELECT p.id, p.name, p.client_name, p.location,
+               COUNT(ci.id) AS compliance_count
+        FROM projects p
+        LEFT JOIN compliance_items ci ON ci.project_id = p.id
+        WHERE p.user_id = ?
+        GROUP BY p.id
+        ORDER BY p.created_at DESC
+        """,
+        (user_id,),
+    ).fetchall()
+    approvals_by_project = {}
+    for row in fetch_user_approval_rows(user_id):
+        approvals_by_project.setdefault(row["project_id"], []).append(row["approval_type"])
+
+    items_by_project = {}
+    for item in annotate_user_compliance_items(user_id):
+        items_by_project.setdefault(item["project_id"], []).append(item)
+
+    cards = []
+    for row in project_rows:
+        approval_types = approvals_by_project.get(row["id"], [])
+        if approval_filter and approval_filter not in approval_types:
+            continue
+
+        project_items = items_by_project.get(row["id"], [])
+        overdue_count = sum(1 for item in project_items if item["derived_status"] == "Overdue")
+        due_soon_count = sum(1 for item in project_items if item["derived_status"] == "Due in 7 days")
+        cards.append(
+            {
+                "id": row["id"],
+                "name": row["name"],
+                "client_name": row["client_name"],
+                "location": row["location"],
+                "compliance_count": row["compliance_count"],
+                "approval_types": approval_types,
+                "overdue_count": overdue_count,
+                "due_soon_count": due_soon_count,
+                "all_clear": row["compliance_count"] > 0 and overdue_count == 0 and due_soon_count == 0,
+            }
+        )
+    return cards
+
+
+def group_items_for_overview(items, kind):
+    grouped = {}
+    for item in items:
+        project = grouped.setdefault(
+            item["project_id"],
+            {
+                "project_id": item["project_id"],
+                "project_name": item["project_name"],
+                "project_location": item.get("project_location", ""),
+                "items": [],
+                "overdue_count": 0,
+                "due_soon_count": 0,
+                "upcoming_count": 0,
+            },
+        )
+        project["items"].append(item)
+        if item["derived_status"] == "Overdue":
+            project["overdue_count"] += 1
+        if item["derived_status"] == "Due in 7 days":
+            project["due_soon_count"] += 1
+        if kind == "upcoming" and item["derived_status"] in {"Pending", "Due in 7 days"}:
+            project["upcoming_count"] += 1
+
+    sections = list(grouped.values())
+    for section in sections:
+        section["items"].sort(key=lambda item: item["display_due_date"] or "9999-12-31")
+    sections.sort(key=lambda section: section["project_name"].lower())
+    return sections
+
+
+def build_cross_project_calendar(user_id, month_offset=0):
+    items = annotate_user_compliance_items(user_id)
+    event_map = {}
+    today = date.today()
+    month_start = add_months(today.replace(day=1), month_offset)
+    month_end = add_months(month_start, 1) - timedelta(days=1)
+
+    for item in items:
+        due_date = parse_iso_date(item["display_due_date"])
+        if not due_date or not (month_start <= due_date <= month_end):
+            continue
+        event_map.setdefault(due_date.isoformat(), []).append(
+            {
+                "label": item["project_name"],
+                "meta": item["condition_description"],
+                "kind": item["derived_status"],
+                "href": url_for("project_detail", project_id=item["project_id"]),
+            }
+        )
+
+    month_matrix = calendar.monthcalendar(month_start.year, month_start.month)
+    days = []
+    for week in month_matrix:
+        for day_number in week:
+            if day_number == 0:
+                days.append({"day": "", "date": "", "events": [], "is_today": False})
+                continue
+            current_date = date(month_start.year, month_start.month, day_number)
+            iso_date = current_date.isoformat()
+            days.append(
+                {
+                    "day": day_number,
+                    "date": iso_date,
+                    "events": event_map.get(iso_date, []),
+                    "is_today": current_date == today,
+                }
+            )
+
+    return {
+        "month_label": f"{calendar.month_name[month_start.month]} {month_start.year}",
+        "month_offset": month_offset,
+        "days": days,
+    }
 
 
 def record_history(
@@ -1402,19 +1537,7 @@ def dashboard():
     project_count = get_db().execute(
         "SELECT COUNT(*) AS count FROM projects WHERE user_id = ?", (g.user["id"],)
     ).fetchone()["count"]
-    recent_projects = get_db().execute(
-        """
-        SELECT p.id, p.name, p.client_name, p.location,
-               COUNT(ci.id) AS compliance_count
-        FROM projects p
-        LEFT JOIN compliance_items ci ON ci.project_id = p.id
-        WHERE p.user_id = ?
-        GROUP BY p.id
-        ORDER BY p.created_at DESC
-        LIMIT 5
-        """,
-        (g.user["id"],),
-    ).fetchall()
+    recent_projects = build_project_cards(g.user["id"])[:5]
     return render_template(
         "dashboard.html",
         project_count=project_count,
@@ -1433,20 +1556,81 @@ def dashboard():
 @app.route("/projects")
 @login_required
 def projects():
-    rows = get_db().execute(
-        """
-        SELECT p.id, p.name, p.client_name, p.location,
-               COUNT(ci.id) AS compliance_count,
-               SUM(CASE WHEN ci.status = 'Pending' THEN 1 ELSE 0 END) AS pending_count
-        FROM projects p
-        LEFT JOIN compliance_items ci ON ci.project_id = p.id
-        WHERE p.user_id = ?
-        GROUP BY p.id
-        ORDER BY p.created_at DESC
-        """,
-        (g.user["id"],),
-    ).fetchall()
-    return render_template("projects.html", projects=rows)
+    approval_filter = request.args.get("approval_type", "").strip()
+    if approval_filter and approval_filter not in {"EC", "CTE", "CTO"}:
+        approval_filter = ""
+    rows = build_project_cards(g.user["id"], approval_filter=approval_filter)
+    return render_template("projects.html", projects=rows, approval_filter=approval_filter)
+
+
+@app.route("/overdue")
+@login_required
+def overdue_view():
+    items = [
+        item
+        for item in annotate_user_compliance_items(g.user["id"])
+        if item["status"] == "Pending" and item["derived_status"] == "Overdue"
+    ]
+    grouped_projects = group_items_for_overview(items, "overdue")
+    return render_template(
+        "overdue.html",
+        grouped_projects=grouped_projects,
+        total_count=len(items),
+        project_count=len(grouped_projects),
+    )
+
+
+@app.route("/upcoming")
+@login_required
+def upcoming_view():
+    window_days = request.args.get("days", "30")
+    if window_days not in {"7", "15", "30", "60"}:
+        window_days = "30"
+    days = int(window_days)
+    cutoff = (date.today() + timedelta(days=days)).isoformat()
+    items = [
+        item
+        for item in annotate_user_compliance_items(g.user["id"])
+        if item["status"] == "Pending"
+        and item["display_due_date"]
+        and date.today().isoformat() <= item["display_due_date"] <= cutoff
+    ]
+    grouped_projects = group_items_for_overview(items, "upcoming")
+    return render_template(
+        "upcoming.html",
+        grouped_projects=grouped_projects,
+        total_count=len(items),
+        project_count=len(grouped_projects),
+        selected_window=days,
+        window_options=[7, 15, 30, 60],
+    )
+
+
+@app.route("/documents")
+@login_required
+def documents_view():
+    documents = fetch_user_documents(g.user["id"])
+    return render_template("documents.html", documents=documents)
+
+
+@app.route("/calendar")
+@login_required
+def calendar_view():
+    month_offset = request.args.get("offset", "0")
+    try:
+        month_offset = int(month_offset)
+    except ValueError:
+        month_offset = 0
+    month_offset = max(-6, min(month_offset, 6))
+    calendar_data = build_cross_project_calendar(g.user["id"], month_offset=month_offset)
+    return render_template("calendar.html", calendar_data=calendar_data)
+
+
+@app.route("/reports")
+@login_required
+def reports_view():
+    projects = build_project_cards(g.user["id"])
+    return render_template("reports.html", projects=projects)
 
 
 @app.route("/projects/new", methods=["GET", "POST"])

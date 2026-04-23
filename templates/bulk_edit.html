@@ -3,16 +3,24 @@
 {% block title %}Bulk Edit | ClearPath{% endblock %}
 
 {% block content %}
-<section class="page-header">
+<nav class="breadcrumb">
+  <a href="{{ url_for('dashboard') }}">Dashboard</a>
+  <span>›</span>
+  <a href="{{ url_for('projects') }}">Projects</a>
+  <span>›</span>
+  <a href="{{ url_for('project_detail', project_id=project['id']) }}">{{ project["name"] }}</a>
+  <span>›</span>
+  <span>Bulk edit</span>
+</nav>
+
+<section class="screen-head">
   <div>
-    <span class="eyebrow">Bulk Edit</span>
-    <h1>{{ project["name"] }}</h1>
-    <p class="muted">Tighten imported actions, dates, and recurring schedules in one pass.</p>
+    <h1>{{ project["name"] }} — bulk edit</h1>
+    <p class="subtle-copy">Tighten imported actions, due dates, and status values in one pass.</p>
   </div>
-  <a class="secondary-button button-link" href="{{ url_for('project_detail', project_id=project['id']) }}">Back to Project</a>
 </section>
 
-<section class="panel">
+<section class="flat-panel">
   {% if items %}
   <form method="post" action="{{ url_for('save_bulk_edit_project', project_id=project['id']) }}" class="stack-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
@@ -22,9 +30,9 @@
           <tr>
             <th>Condition</th>
             <th>Action</th>
-            <th>Due Date</th>
+            <th>Due date</th>
             <th>Frequency</th>
-            <th>Schedule Source</th>
+            <th>Schedule source</th>
             <th>Status</th>
           </tr>
         </thead>
@@ -32,12 +40,8 @@
           {% for item in items %}
           <tr>
             <td>{{ item["condition_description"] }}</td>
-            <td>
-              <textarea name="action_to_be_taken_{{ item['id'] }}" rows="3">{{ item["action_to_be_taken"] }}</textarea>
-            </td>
-            <td>
-              <input type="date" name="due_date_{{ item['id'] }}" value="{{ item['due_date'] }}" />
-            </td>
+            <td><textarea name="action_to_be_taken_{{ item['id'] }}" rows="3">{{ item["action_to_be_taken"] }}</textarea></td>
+            <td><input type="date" name="due_date_{{ item['id'] }}" value="{{ item['due_date'] }}" /></td>
             <td>
               <select name="frequency_{{ item['id'] }}">
                 {% for frequency in frequency_types %}
@@ -65,7 +69,10 @@
         </tbody>
       </table>
     </div>
-    <button type="submit">Save Bulk Updates</button>
+    <div class="form-actions">
+      <a class="secondary-button button-link" href="{{ url_for('project_detail', project_id=project['id']) }}">Cancel</a>
+      <button type="submit" class="primary-button">Save bulk updates</button>
+    </div>
   </form>
   {% else %}
   <div class="empty-state">

@@ -8,73 +8,88 @@
   </head>
   <body>
     {% if g.user %}
-    <header class="topbar">
-      <div class="topbar-inner">
-        <a class="brand" href="{{ url_for('dashboard') }}">
-          <span class="brand-mark">C</span>
-          <div>
-            <strong>ClearPath</strong>
-            <small>Compliance Tracker</small>
-          </div>
-        </a>
-
-        <nav class="nav">
-          <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a>
-          <a href="{{ url_for('projects') }}" class="{% if request.endpoint in ['projects', 'project_detail', 'new_project', 'edit_project', 'edit_compliance_item'] %}active{% endif %}">Projects</a>
-          <a href="{{ url_for('new_project') }}">New Project</a>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="sidebar-brand" href="{{ url_for('dashboard') }}"><span>Clear</span><span class="brand-accent">Path</span></a>
+        <nav class="sidebar-nav">
+          <a class="sidebar-link {% if request.endpoint == 'dashboard' %}active active-green{% endif %}" href="{{ url_for('dashboard') }}">Dashboard</a>
+          <a class="sidebar-link {% if request.endpoint in ['projects', 'project_detail', 'new_project', 'edit_project', 'edit_compliance_item', 'bulk_edit_project'] and not request.args.get('approval_type') %}active active-green{% endif %}" href="{{ url_for('projects') }}">All projects</a>
+          <a class="sidebar-link {% if request.endpoint == 'overdue_view' %}active active-red{% endif %}" href="{{ url_for('overdue_view') }}">Overdue</a>
+          <a class="sidebar-link {% if request.endpoint == 'upcoming_view' %}active active-amber{% endif %}" href="{{ url_for('upcoming_view') }}">Upcoming</a>
+          <a class="sidebar-link {% if request.endpoint == 'documents_view' %}active active-green{% endif %}" href="{{ url_for('documents_view') }}">Documents</a>
         </nav>
 
-        <div class="topbar-meta">
-          <details class="notification-menu">
-            <summary class="notification-trigger">
-              <span class="notification-icon">!</span>
-              {% if g.notification_count %}
-              <span class="notification-badge">{{ g.notification_count }}</span>
-              {% endif %}
-            </summary>
-            <div class="notification-panel">
-              <div class="notification-head">
-                <strong>Upcoming due dates</strong>
-                <small>Next 7 days</small>
+        <div class="sidebar-section-label">Approvals</div>
+        <nav class="sidebar-nav sidebar-approvals">
+          <a class="sidebar-link approval-link {% if request.args.get('approval_type') == 'EC' %}active active-green{% endif %}" href="{{ url_for('projects', approval_type='EC') }}"><span class="approval-dot dot-ec"></span>EC</a>
+          <a class="sidebar-link approval-link {% if request.args.get('approval_type') == 'CTE' %}active active-amber{% endif %}" href="{{ url_for('projects', approval_type='CTE') }}"><span class="approval-dot dot-cte"></span>CTE</a>
+          <a class="sidebar-link approval-link {% if request.args.get('approval_type') == 'CTO' %}active active-red{% endif %}" href="{{ url_for('projects', approval_type='CTO') }}"><span class="approval-dot dot-cto"></span>CTO</a>
+        </nav>
+      </aside>
+
+      <div class="app-main">
+        <header class="topbar">
+          <div class="topbar-nav">
+            <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a>
+            <a href="{{ url_for('projects') }}" class="{% if request.endpoint in ['projects', 'project_detail', 'new_project', 'edit_project', 'edit_compliance_item', 'bulk_edit_project'] %}active{% endif %}">Projects</a>
+            <a href="{{ url_for('calendar_view') }}" class="{% if request.endpoint == 'calendar_view' %}active{% endif %}">Calendar</a>
+            <a href="{{ url_for('reports_view') }}" class="{% if request.endpoint == 'reports_view' %}active{% endif %}">Reports</a>
+          </div>
+          <div class="topbar-meta">
+            <details class="notification-menu">
+              <summary class="notification-trigger" aria-label="Notifications">
+                <span class="notification-icon">!</span>
+                {% if g.notification_count %}
+                <span class="notification-badge">{{ g.notification_count }}</span>
+                {% endif %}
+              </summary>
+              <div class="notification-panel">
+                <div class="notification-head">
+                  <strong>Upcoming due dates</strong>
+                  <small>Next 7 days</small>
+                </div>
+                {% if g.notification_items %}
+                <div class="notification-list">
+                  {% for item in g.notification_items %}
+                  <a class="notification-item" href="{{ url_for('project_detail', project_id=item['project_id'], status_filter='Due in 7 days') }}">
+                    <strong>{{ item["project_name"] }}</strong>
+                    <span>{{ item["condition_description"] }}</span>
+                    <small>Due {{ item["display_due_date"] or item["due_date"] }}</small>
+                  </a>
+                  {% endfor %}
+                </div>
+                {% else %}
+                <p class="subtle-copy">No upcoming due dates in the next 7 days.</p>
+                {% endif %}
               </div>
-              {% if g.notification_items %}
-              <div class="notification-list">
-                {% for item in g.notification_items %}
-                <a class="notification-item" href="{{ url_for('project_detail', project_id=item['project_id'], status_filter='Due in 7 days') }}">
-                  <strong>{{ item["project_name"] }}</strong>
-                  <span>{{ item["condition_description"] }}</span>
-                  <small>Due {{ item["display_due_date"] or item["due_date"] }}</small>
-                </a>
-                {% endfor %}
-              </div>
-              {% else %}
-              <p class="muted compact-note">No upcoming due dates in the next 7 days.</p>
-              {% endif %}
-            </div>
-          </details>
-          <span class="user-chip">{{ g.user["email"] }}</span>
-          <form method="post" action="{{ url_for('logout') }}">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-            <button type="submit" class="secondary-button">Log out</button>
-          </form>
-        </div>
-      </div>
-    </header>
+            </details>
+            <span class="avatar-chip">{{ g.user["email"][:2]|upper }}</span>
+            <form method="post" action="{{ url_for('logout') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+              <button type="submit" class="secondary-button">Log out</button>
+            </form>
+          </div>
+        </header>
     {% endif %}
 
-    <main class="content {% if not g.user %}auth-layout{% endif %}">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            <div class="flash-stack">
-              {% for category, message in messages %}
-                <div class="flash flash-{{ category }}">{{ message }}</div>
-              {% endfor %}
-            </div>
-          {% endif %}
-        {% endwith %}
+    <main class="{% if g.user %}content-area{% else %}auth-layout{% endif %}">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-stack {% if not g.user %}auth-flashes{% endif %}">
+            {% for category, message in messages %}
+              <div class="flash flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
 
-        {% block content %}{% endblock %}
+      {% block content %}{% endblock %}
     </main>
+
+    {% if g.user %}
+      </div>
+    </div>
+    {% endif %}
 
     <script>
       document.querySelectorAll("[data-schedule-preview]").forEach((container) => {
@@ -92,22 +107,11 @@
           return new Date(next.getFullYear(), next.getMonth(), safeDay).toISOString().slice(0, 10);
         };
 
-        const approvalMap = Object.fromEntries(
-          approvalContext.map((approval) => [approval.approval_type, approval])
-        );
-
-        const intervalMap = {
-          Monthly: 1,
-          Quarterly: 3,
-          "Half-yearly": 6,
-          Yearly: 12,
-        };
+        const approvalMap = Object.fromEntries(approvalContext.map((approval) => [approval.approval_type, approval]));
+        const intervalMap = { Monthly: 1, Quarterly: 3, "Half-yearly": 6, Yearly: 12 };
 
         const updatePreview = () => {
-          if (!previewField || !frequencyField) {
-            return;
-          }
-
+          if (!previewField || !frequencyField) return;
           const frequency = frequencyField.value;
           const dueDate = dueDateField ? dueDateField.value : "";
           const scheduleSource = scheduleSourceField ? scheduleSourceField.value : "";
@@ -116,7 +120,6 @@
             previewField.textContent = "No recurring schedule. Use this for general site conditions without a deadline.";
             return;
           }
-
           if (frequency === "One-time") {
             previewField.textContent = dueDate ? `One-time deadline on ${dueDate}.` : "One-time item with no date selected yet.";
             return;
@@ -131,27 +134,21 @@
           }
 
           if (!anchorDate) {
-            const anchorLabel = scheduleSource || "a starting date";
-            previewField.textContent = `Select ${anchorLabel} issue date or a custom date to preview the recurring schedule.`;
+            previewField.textContent = `Select ${scheduleSource || "a starting date"} issue date or a custom date to preview the recurring schedule.`;
             return;
           }
 
           const dates = [];
           let occurrence = anchorDate;
           while (dates.length < 4) {
-            if (endDate && occurrence > endDate) {
-              break;
-            }
+            if (endDate && occurrence > endDate) break;
             dates.push(occurrence);
             occurrence = addMonths(occurrence, interval);
           }
 
-          if (!dates.length) {
-            previewField.textContent = "No recurring dates fall inside the selected approval validity window.";
-            return;
-          }
-
-          previewField.textContent = `Upcoming schedule: ${dates.join(", ")}${endDate ? ` until ${endDate}` : ""}.`;
+          previewField.textContent = dates.length
+            ? `Upcoming schedule: ${dates.join(", ")}${endDate ? ` until ${endDate}` : ""}.`
+            : "No recurring dates fall inside the selected approval validity window.";
         };
 
         [frequencyField, dueDateField, scheduleSourceField].forEach((field) => {

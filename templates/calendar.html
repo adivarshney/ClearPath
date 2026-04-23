@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Calendar | ClearPath{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb">
+  <a href="{{ url_for('dashboard') }}">Dashboard</a>
+  <span>›</span>
+  <span>Calendar</span>
+</nav>
+
+<section class="screen-head">
+  <div>
+    <h1>Calendar</h1>
+    <p class="subtle-copy">Cross-project compliance deadlines for {{ calendar_data["month_label"] }}.</p>
+  </div>
+  <div class="toolbar-actions">
+    <a class="secondary-button button-link" href="{{ url_for('calendar_view', offset=calendar_data['month_offset'] - 1) }}">Previous</a>
+    <a class="secondary-button button-link" href="{{ url_for('calendar_view', offset=calendar_data['month_offset'] + 1) }}">Next</a>
+  </div>
+</section>
+
+<section class="flat-panel">
+  <div class="calendar-side-head">
+    <h2>{{ calendar_data["month_label"] }}</h2>
+  </div>
+  <div class="full-calendar">
+    <div class="mini-calendar-weekdays">
+      <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+    </div>
+    <div class="full-calendar-days">
+      {% for day in calendar_data["days"] %}
+      <div class="full-day {% if not day['day'] %}empty{% endif %} {% if day['is_today'] %}today{% endif %}">
+        {% if day["day"] %}
+        <span>{{ day["day"] }}</span>
+        {% for event in day["events"][:3] %}
+        <a class="calendar-entry entry-{{ event['kind']|lower|replace(' ', '-') }}" href="{{ event['href'] }}">{{ event["label"] }}</a>
+        {% endfor %}
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

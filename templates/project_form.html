@@ -1,48 +1,62 @@
 {% extends "base.html" %}
 
-{% block title %}Add Project | ClearPath{% endblock %}
+{% block title %}{{ form_title }} | ClearPath{% endblock %}
 
 {% block content %}
-<section class="page-header">
+<nav class="breadcrumb">
+  <a href="{{ url_for('dashboard') }}">Dashboard</a>
+  <span>›</span>
+  <a href="{{ url_for('projects') }}">Projects</a>
+  <span>›</span>
+  <span>{{ form_title }}</span>
+</nav>
+
+<section class="screen-head">
   <div>
-    <span class="eyebrow">Project Setup</span>
     <h1>{{ form_title }}</h1>
-    <p class="muted">{{ form_copy }}</p>
+    <p class="subtle-copy">{{ form_copy }}</p>
   </div>
 </section>
 
-<section class="panel form-panel">
+<section class="flat-panel form-panel-wide">
   <form method="post" action="{{ form_action }}" class="stack-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-    <label>
-      <span>Project name</span>
-      <input type="text" name="name" value="{{ request.form.get('name', project['name'] if project else '') }}" required />
-    </label>
 
-    <label>
-      <span>Client name</span>
-      <input type="text" name="client_name" value="{{ request.form.get('client_name', project['client_name'] if project else '') }}" required />
-    </label>
+    <div class="section-title">Project details</div>
+    <div class="two-column-form">
+      <label>
+        <span>Project name</span>
+        <input type="text" name="name" value="{{ request.form.get('name', project['name'] if project else '') }}" placeholder="e.g. Hindon Cement Plant — Phase II" required />
+      </label>
+      <label>
+        <span>Client name</span>
+        <input type="text" name="client_name" value="{{ request.form.get('client_name', project['client_name'] if project else '') }}" placeholder="e.g. Hindon Industries Pvt Ltd" required />
+      </label>
+      <label class="full-span">
+        <span>Project location</span>
+        <input type="text" name="location" value="{{ request.form.get('location', project['location'] if project else '') }}" placeholder="e.g. Bulandshahr, Uttar Pradesh" required />
+      </label>
+    </div>
 
-    <label>
-      <span>Location</span>
-      <input type="text" name="location" value="{{ request.form.get('location', project['location'] if project else '') }}" required />
-    </label>
+    <div class="section-title">NOC approvals — select and enter dates</div>
+    <p class="subtle-copy">Tick the approvals applicable to this project. Dates and notes can be completed now or refined later.</p>
 
-    <div class="section-block">
-      <div class="section-heading">
-        <span>Approvals</span>
-        <p class="muted compact-note">Select each NOC that applies and optionally record issue and expiry dates.</p>
-      </div>
-      <div class="approval-grid">
-        {% for approval in approval_form_entries %}
-        <article class="approval-card">
+    <div class="approval-form-list">
+      {% for approval in approval_form_entries %}
+      <article class="approval-form-card">
+        <div class="approval-form-head">
           <label class="toggle-row">
             <input type="checkbox" name="approval_enabled_{{ approval['approval_type'] }}" {% if approval["selected"] %}checked{% endif %} />
-            <strong>{{ approval["approval_type"] }}</strong>
+            <span class="approval-badge-square badge-{{ approval['approval_type']|lower|replace(' ', '-') }}">{{ approval["approval_type"] }}</span>
+            <div>
+              <strong>{{ approval["approval_type"] }}</strong>
+              <p class="subtle-copy">Capture the issue date, expiry date, and internal notes for this approval.</p>
+            </div>
           </label>
+        </div>
+        <div class="three-column-form">
           <label>
-            <span>Date of issue</span>
+            <span>Issue date</span>
             <input type="date" name="issue_date_{{ approval['approval_type'] }}" value="{{ approval['issue_date'] }}" />
           </label>
           <label>
@@ -51,14 +65,17 @@
           </label>
           <label>
             <span>Approval notes</span>
-            <textarea name="approval_notes_{{ approval['approval_type'] }}" rows="3" placeholder="State-specific renewal rules, reporting notes, consultant reminders...">{{ approval['approval_notes'] }}</textarea>
+            <input type="text" name="approval_notes_{{ approval['approval_type'] }}" value="{{ approval['approval_notes'] }}" placeholder="Reference no., renewal rule, state note..." />
           </label>
-        </article>
-        {% endfor %}
-      </div>
+        </div>
+      </article>
+      {% endfor %}
     </div>
 
-    <button type="submit">{{ submit_label }}</button>
+    <div class="form-actions">
+      <a class="secondary-button button-link" href="{{ url_for('projects') }}">Cancel</a>
+      <button type="submit" class="primary-button">{{ submit_label }}</button>
+    </div>
   </form>
 </section>
 {% endblock %}

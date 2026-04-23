@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Documents | ClearPath{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb">
+  <a href="{{ url_for('dashboard') }}">Dashboard</a>
+  <span>›</span>
+  <span>Documents</span>
+</nav>
+
+<section class="screen-head">
+  <div>
+    <h1>Documents</h1>
+    <p class="subtle-copy">Uploaded proof documents across your projects.</p>
+  </div>
+</section>
+
+<section class="stack-section">
+  {% if documents %}
+    {% for document in documents %}
+    <a class="project-row-card" href="{{ url_for('view_document', document_id=document['id']) }}" target="_blank" rel="noopener noreferrer">
+      <div>
+        <strong>{{ document["document_title"] or document["original_filename"] }}</strong>
+        <p>{{ document["project_name"] }} · {{ document["project_location"] }}</p>
+      </div>
+      <div class="row-pill-set">
+        {% if document["version_notes"] %}
+        <span class="mini-pill">{{ document["version_notes"] }}</span>
+        {% endif %}
+        <span class="mini-pill pill-clear">{{ document["uploaded_at"][:10] }}</span>
+      </div>
+    </a>
+    {% endfor %}
+  {% else %}
+  <div class="empty-state">
+    <h3>No documents yet</h3>
+    <p>Proof uploads linked to compliance items will appear here.</p>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
