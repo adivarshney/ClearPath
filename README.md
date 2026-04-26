@@ -1,47 +1,51 @@
 # ClearPath
 
-ClearPath is a web-based environmental compliance tracker for consultants managing approvals like `EC`, `CTE`, `CTO`, and related NOCs.
+ClearPath is a web-based environmental compliance workspace for consultants managing approvals like `EC`, `CTE`, `CTO`, and related NOCs.
 
-The product goal is clarity over chaos:
+Instead of tracking conditions across scattered Excel files, folders, and reminders, ClearPath keeps the full compliance picture in one place:
 
-- keep project approvals in one place
-- track every compliance condition in a structured way
-- surface deadlines, recurrence, and renewal risk clearly
-- keep proof documents linked to the exact condition they support
+- projects and approvals
+- approval-specific conditions
+- deadlines and recurring schedules
+- proof documents and annexures
+- portfolio-level risk views
+- compliance report outputs
 
-It is designed to replace scattered Excel files, folder-based proof storage, and manual follow-up.
+## Current Release
 
-## Demo-Ready Release
+Current branch release state: `v2.1.0`  
+Latest commit documented here includes approval workspaces, recurring occurrences, and compliance report exports.
 
-Current release: `2.0.0`
+## Core Product Flow
 
-This release makes ClearPath significantly more demo-ready with:
-
-- security hardening for forms and authentication
-- richer regulatory metadata on compliance items
-- bulk cleanup after import
-- project-level compliance register export
-- audit visibility for compliance changes
-- broader approval coverage and approval notes
-- recurring schedule preview before save
+1. Create a project and select the approvals being tracked.
+2. Add issue / expiry dates and notes for each approval.
+3. Open a project and click into a specific approval like `EC`, `CTE`, or `CTO`.
+4. Manage that approval through dedicated tabs:
+   - `Conditions`
+   - `Compliance report`
+   - `Documents`
+   - `Activity`
+5. Track recurring deadlines, upload proof, and export consultant-ready outputs.
 
 ## Current Features
 
-### Authentication
+### Authentication & Security
 
-- Email and password signup/login
-- Session-based project access
-- CSRF protection on form actions
+- Email + password signup and login
+- Session-based access
+- CSRF protection on forms
 - Rate limiting on signup and login
+- Required `SECRET_KEY` environment variable
 
 ### Project Management
 
 - Create, edit, and delete projects
-- Capture:
+- Store:
   - project name
   - client name
   - location
-- Select one or more approvals per project
+- Track multiple approvals per project
 - Supported default approval types:
   - `EC`
   - `CTE`
@@ -52,13 +56,37 @@ This release makes ClearPath significantly more demo-ready with:
   - `Forest`
   - `AERB`
   - `CGWA`
-- Record approval issue date and expiry date
-- Add approval notes for state-specific rules, renewal notes, or reporting context
+- Store approval issue date, expiry date, and notes
+- Hide unticked approval date fields on the project form
 
-### Compliance Tracker
+### Project Overview
 
-- Add, edit, delete, and bulk edit compliance items
-- Fields supported per compliance item:
+- Dedicated project overview page
+- Clickable NOC rows for each approval
+- Approval cards show:
+  - issue date
+  - expiry date
+  - expiry state
+  - condition count
+  - overdue / due soon summary
+- Compact project calendar with `1m`, `2m`, and `3m` views
+
+### Approval Workspaces
+
+- Separate approval-level pages for `EC`, `CTE`, and `CTO`
+- Each approval page includes tabs for:
+  - `Conditions`
+  - `Compliance report`
+  - `Documents`
+  - `Activity`
+- Conditions are no longer mixed into one flat project-level list
+- Every condition is explicitly linked to an approval type
+
+### Compliance Conditions
+
+- Add, edit, delete, and bulk edit conditions
+- Supported fields:
+  - approval type
   - condition description
   - action to be taken
   - due date
@@ -70,13 +98,13 @@ This release makes ClearPath significantly more demo-ready with:
   - responsible person
   - acknowledgment number
   - remarks
-- Status options:
+- Lifecycle status options:
   - `Pending`
   - `Completed`
   - `On hold`
   - `Not applicable`
 
-### Recurring Scheduling
+### Recurring Scheduling & Occurrences
 
 - Frequency options:
   - `General`
@@ -85,45 +113,18 @@ This release makes ClearPath significantly more demo-ready with:
   - `Quarterly`
   - `Half-yearly`
   - `Yearly`
-- Use either:
-  - a custom due date
-  - or an approval grant date like `EC`, `CTE`, `CTO` as the schedule anchor
-- Recurring dates are generated from issue date through approval expiry
-- Quarterly, monthly, half-yearly, and yearly conditions reflect automatically in:
-  - tracker
-  - reminders
-  - notifications
-  - project calendar
-- Schedule preview is shown before save so consultants can validate recurring timelines
+- Schedule from:
+  - custom date
+  - or approval grant date like `EC`, `CTE`, `CTO`
+- Recurring items generate independent occurrences over time
+- Each occurrence can be marked complete separately
+- Completing one month / quarter does not affect the next one
+- Condition cards show recurrence timelines and a summary like:
+  - overdue count
+  - completed count
+  - upcoming count
 
-### Import & Bulk Review
-
-- Import compliance trackers from `.csv` and `.xlsx`
-- Supports:
-  - structured multi-column sheets
-  - single-column condition-only sheets
-  - partial uploads without action or due-date columns
-- Supported import columns:
-  - `Condition Description`
-  - `Action To Be Taken`
-  - `Due Date`
-  - `Status`
-  - `Frequency`
-  - `Schedule Source`
-  - `Submitted To`
-  - `Submission Mode`
-  - `Responsible Person`
-  - `Acknowledgment Number`
-  - `Remarks`
-- Download a sample import template from the project page
-- Bulk edit imported items in one screen for:
-  - action
-  - due date
-  - frequency
-  - schedule source
-  - status
-
-### Deadlines, Filters, and Alerts
+### Deadlines, Colour States, & Alerts
 
 - Derived urgency states:
   - `Pending`
@@ -132,70 +133,95 @@ This release makes ClearPath significantly more demo-ready with:
   - `Completed`
   - `On hold`
   - `Not applicable`
-- Filter tracker by urgency
-- Filter tracker by frequency
-- Highlight overdue items clearly
-- Show due-in-7-days reminders more visibly
-- Header notification control for upcoming due dates within a week
+- Condition due dates are colour-coded:
+  - red for overdue
+  - amber for due soon
+  - green for healthy future dates
+- Header notifications for upcoming due dates
+- Overdue view grouped by project
+- Overdue rows show NOC badges
+- Project blocks on overdue view are collapsible
 
-### Calendar & Approval Visibility
+### Calendar
 
-- Project calendar showing:
-  - compliance due dates
-  - approval issue milestones
-  - approval expiry milestones
-- Calendar range switch:
-  - `1 Month`
-  - `2 Months`
-  - `3 Months`
-- NOC cards show issue date, expiry date, expiry state, and approval notes
+- Project-level deadline calendar
+- Cross-project calendar screen
+- Calendar event colours reflect urgency:
+  - red
+  - amber
+  - green
+- Approval issue and expiry milestones appear alongside compliance deadlines
+
+### Import & Bulk Cleanup
+
+- Import trackers from `.csv` and `.xlsx`
+- Supports:
+  - structured multi-column sheets
+  - single-column condition-only uploads
+  - uploads missing action / due-date columns
+- Supports import column aliases for approval type, condition, action, due date, status, frequency, schedule source, and metadata
+- Download sample import CSV
+- Bulk edit imported conditions in one screen
+
+### Compliance Reports
+
+- Dedicated compliance report tab per approval
+- Period-based response grid
+- Supports period selection for export
+- Save response text by condition and reporting period
+- Attach supporting files to each response
+- Stored attachments become annexures in the report flow
+- Export selected columns to:
+  - Excel
+  - PDF
 
 ### Documents
 
-- Upload proof documents against each compliance item
-- Supported file types:
+- Upload proof documents to action-to-be-taken conditions
+- Support for:
   - PDF
-  - images
-- Add document title
-- Add version notes / remarks
-- Linked document list shown directly inside each compliance item
+  - image uploads
+- Add document title and version notes
+- Approval-level documents tab shows:
+  - action-to-be-taken uploads
+  - compliance report annexures
+- Global documents page also includes report annexures
 
-### Dashboard
+### Activity & Audit
 
-- Total projects
-- Pending items
-- Completed items
-- Overdue items
-- Due in 7 days items
-- On hold items
-- Not applicable items
-- Recent projects table
-
-### Export & Audit
-
-- Export a project compliance register to `.xlsx`
-- Export includes:
-  - project details
-  - selected approvals
-  - approval notes
-  - compliance items
-  - next due date
-  - urgency state
-  - regulatory metadata
-  - document count
-- Recent activity feed on the project page shows:
+- Approval-specific activity timeline
+- Tracks:
   - imports
   - edits
   - status changes
+  - occurrence completion
+  - due date changes
   - document uploads
   - deletions
 
-### UI / UX
+### Portfolio Views
 
-- Responsive layout for desktop and smaller screens
-- Better behavior under browser zoom
-- Lightweight minimalist visual direction
-- Clearer calendar rendering and event truncation
+- Approval portfolio pages for `EC`, `CTE`, and `CTO`
+- Structured sections:
+  - `Needs attention`
+  - `Healthy`
+  - `No record`
+- Summary cards at the top for:
+  - approval coverage
+  - valid count
+  - expiring / expired count
+  - overdue condition count
+
+### Dashboard & Reports
+
+- Dashboard cards for:
+  - total projects
+  - pending
+  - overdue
+  - completed
+- Recent projects view
+- Cross-project report shell
+- Project compliance register export to `.xlsx`
 
 ## Local Setup
 
@@ -206,8 +232,6 @@ python3 -m pip install -r requirements.txt
 ```
 
 ### 2. Set the app secret
-
-ClearPath now requires a real `SECRET_KEY`.
 
 ```bash
 export SECRET_KEY="replace-this-with-a-secure-random-string"
@@ -223,20 +247,38 @@ python3 app.py
 
 [http://127.0.0.1:5000](http://127.0.0.1:5000)
 
-## Data Storage
+## Storage
 
 - SQLite database: `instance/clearpath.db`
-- Uploaded proof documents: `instance/uploads/`
+- Uploaded files: `instance/uploads/`
 
 ## Import Notes
 
 - Single-column Excel uploads are supported
-- Action, due date, and other fields can be filled later
-- For recurring schedules, attach the item to an approval issue date or provide a custom starting date
+- `Approval Type` can be included in imports
+- If `Approval Type` is not present, import can fall back to the selected approval context
+- Action / due date / schedule fields can be completed later
 
 ## Release History
 
-### Release 2.0.0
+### v2.1.0
+
+Approval workspaces and reporting flow.
+
+- project overview now links into dedicated approval pages
+- separate `EC`, `CTE`, `CTO` workspaces
+- conditions tied to approvals instead of one mixed list
+- recurring conditions generate independent occurrences
+- occurrence-level completion support
+- compliance report tab with annexure attachments
+- compliance report export to Excel and PDF
+- approval-specific documents and activity views
+- overdue screen with NOC badges and collapsible project groups
+- approval portfolio pages with `Needs attention`, `Healthy`, and `No record`
+- calendar urgency colour coding
+- hidden approval date fields when approvals are unticked
+
+### v2.0.0
 
 Demo-readiness and workflow depth improvements.
 
@@ -246,128 +288,28 @@ Demo-readiness and workflow depth improvements.
 - broader approval catalog
 - approval notes
 - bulk edit screen after import
-- visible `Next due` support in tracker/export
+- visible next-due support in tracker/export
 - document title and version notes
-- richer compliance metadata:
-  - submitted to
-  - submission mode
-  - responsible person
-  - acknowledgment number
-  - remarks
-- additional lifecycle statuses:
-  - `On hold`
-  - `Not applicable`
+- richer compliance metadata
 - project export to Excel
-- project activity / audit feed
-- recurring schedule preview before save
+- stronger audit visibility
 
-### Release 1.4.0
+### v1.0.0
 
-Recurring compliance scheduling enhancements.
+Initial MVP.
 
-- monthly/quarterly/half-yearly/yearly schedules
-- schedule from approval grant date
-- recurring next-due calculation
-- recurring deadlines reflected in tracker, reminders, notifications, and calendar
-- clearer post-import editing flow for action and due date completion
-
-### Release 1.3.0
-
-Deadline visibility and planning improvements.
-
-- header notification control
-- project calendar
-- 1/2/3 month calendar views
-- improved responsive layout and zoom behavior
-
-### Release 1.2.0
-
-Usability, deadline clarity, and interface improvements.
-
-- approval issue and expiry dates
-- optional due dates
-- frequency-based tracking
-- single-column import support
-- urgency and frequency filters
-- sample template download
-- minimalist UI refresh
-
-### Release 1.1.0
-
-Operational workflow improvements for early consultant use.
-
-- CSV/XLSX import
-- project edit/delete
-- compliance item edit/delete
-- overdue and upcoming reminders
-
-### Release 1.0.0
-
-Initial MVP for environmental compliance tracking.
-
-- user signup/login
-- project creation and listing
-- per-project compliance tracker
-- document upload support
+- authentication
+- project creation
+- approval selection
+- compliance tracker
+- file uploads
 - basic dashboard
 
-## Upcoming Releases
+## Upcoming / Next Release Candidates
 
-### Planned Release 2.1.0
-
-Consultant communication and reporting polish.
-
-- email reminders for due dates
-- downloadable PDF summary / register output
-- cleaner reminder settings by project
-- better document browsing and proof review
-
-### Planned Release 2.2.0
-
-EC letter upload and extraction review flow.
-
-- EC PDF upload
-- metadata extraction preview
-- extracted condition preview before save
-- suggested action draft generation
-- confirm-before-import workflow
-- auto-extracted row labeling
-
-### Planned Release 2.3.0
-
-Advanced extraction and enterprise readiness.
-
-- scanned PDF OCR
-- duplicate EC detection
-- extraction confidence markers
-- approval extraction expansion beyond EC
-- stronger audit trail depth
-
-### Planned Release 3.0.0
-
-Production-scale collaboration.
-
-- role-based access
-- team collaboration
-- PostgreSQL migration
-- stronger deployment profile
-- organization-level reporting workflows
-
-## Current Scope Notes
-
-ClearPath is strong on structured compliance tracking today, but it still does not yet include:
-
-- scanned approval OCR
-- automatic condition extraction from uploaded approvals
-- automated frequency inference from approval text
-- owner-facing portal/reporting workflows
-- role-based team access
-
-## Tech Stack
-
-- Python
-- Flask
-- Flask-WTF
-- Flask-Limiter
-- SQLite
-- OpenPyXL
+- EC letter PDF extraction with review-before-import
+- duplicate EC detection using reference number + issue date
+- OCR support for scanned approval letters
+- configurable approval master data instead of only hardcoded defaults
+- stronger reports page with portfolio exports
+- reminders beyond in-app notifications
