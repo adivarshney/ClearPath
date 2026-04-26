@@ -13,7 +13,7 @@
         <a class="sidebar-brand" href="{{ url_for('dashboard') }}"><span>Clear</span><span class="brand-accent">Path</span></a>
         <nav class="sidebar-nav">
           <a class="sidebar-link {% if request.endpoint == 'dashboard' %}active active-green{% endif %}" href="{{ url_for('dashboard') }}">Dashboard</a>
-          <a class="sidebar-link {% if request.endpoint in ['projects', 'project_detail', 'new_project', 'edit_project', 'edit_compliance_item', 'bulk_edit_project'] and not request.args.get('approval_type') %}active active-green{% endif %}" href="{{ url_for('projects') }}">All projects</a>
+          <a class="sidebar-link {% if request.endpoint in ['projects', 'project_detail', 'approval_detail', 'new_project', 'edit_project', 'edit_compliance_item', 'bulk_edit_project'] and not request.args.get('approval_type') %}active active-green{% endif %}" href="{{ url_for('projects') }}">All projects</a>
           <a class="sidebar-link {% if request.endpoint == 'overdue_view' %}active active-red{% endif %}" href="{{ url_for('overdue_view') }}">Overdue</a>
           <a class="sidebar-link {% if request.endpoint == 'upcoming_view' %}active active-amber{% endif %}" href="{{ url_for('upcoming_view') }}">Upcoming</a>
           <a class="sidebar-link {% if request.endpoint == 'documents_view' %}active active-green{% endif %}" href="{{ url_for('documents_view') }}">Documents</a>
@@ -21,9 +21,9 @@
 
         <div class="sidebar-section-label">Approvals</div>
         <nav class="sidebar-nav sidebar-approvals">
-          <a class="sidebar-link approval-link {% if request.args.get('approval_type') == 'EC' %}active active-green{% endif %}" href="{{ url_for('projects', approval_type='EC') }}"><span class="approval-dot dot-ec"></span>EC</a>
-          <a class="sidebar-link approval-link {% if request.args.get('approval_type') == 'CTE' %}active active-amber{% endif %}" href="{{ url_for('projects', approval_type='CTE') }}"><span class="approval-dot dot-cte"></span>CTE</a>
-          <a class="sidebar-link approval-link {% if request.args.get('approval_type') == 'CTO' %}active active-red{% endif %}" href="{{ url_for('projects', approval_type='CTO') }}"><span class="approval-dot dot-cto"></span>CTO</a>
+          <a class="sidebar-link approval-link {% if request.args.get('approval_type') == 'EC' or active_approval_type|default('') == 'EC' %}active active-green{% endif %}" href="{{ url_for('projects', approval_type='EC') }}"><span class="approval-dot dot-ec"></span>EC</a>
+          <a class="sidebar-link approval-link {% if request.args.get('approval_type') == 'CTE' or active_approval_type|default('') == 'CTE' %}active active-amber{% endif %}" href="{{ url_for('projects', approval_type='CTE') }}"><span class="approval-dot dot-cte"></span>CTE</a>
+          <a class="sidebar-link approval-link {% if request.args.get('approval_type') == 'CTO' or active_approval_type|default('') == 'CTO' %}active active-red{% endif %}" href="{{ url_for('projects', approval_type='CTO') }}"><span class="approval-dot dot-cto"></span>CTO</a>
         </nav>
       </aside>
 
@@ -31,7 +31,7 @@
         <header class="topbar">
           <div class="topbar-nav">
             <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a>
-            <a href="{{ url_for('projects') }}" class="{% if request.endpoint in ['projects', 'project_detail', 'new_project', 'edit_project', 'edit_compliance_item', 'bulk_edit_project'] %}active{% endif %}">Projects</a>
+            <a href="{{ url_for('projects') }}" class="{% if request.endpoint in ['projects', 'project_detail', 'approval_detail', 'new_project', 'edit_project', 'edit_compliance_item', 'bulk_edit_project'] %}active{% endif %}">Projects</a>
             <a href="{{ url_for('calendar_view') }}" class="{% if request.endpoint == 'calendar_view' %}active{% endif %}">Calendar</a>
             <a href="{{ url_for('reports_view') }}" class="{% if request.endpoint == 'reports_view' %}active{% endif %}">Reports</a>
           </div>
@@ -51,7 +51,7 @@
                 {% if g.notification_items %}
                 <div class="notification-list">
                   {% for item in g.notification_items %}
-                  <a class="notification-item" href="{{ url_for('project_detail', project_id=item['project_id'], status_filter='Due in 7 days') }}">
+                  <a class="notification-item" href="{{ url_for('approval_detail', project_id=item['project_id'], approval_type=item['approval_type']) }}">
                     <strong>{{ item["project_name"] }}</strong>
                     <span>{{ item["condition_description"] }}</span>
                     <small>Due {{ item["display_due_date"] or item["due_date"] }}</small>
@@ -159,6 +159,14 @@
         });
 
         updatePreview();
+      });
+
+      document.querySelectorAll("[data-approval-card]").forEach((card) => {
+        const checkbox = card.querySelector("[data-approval-toggle]");
+        if (!checkbox) return;
+        const syncState = () => card.classList.toggle("is-selected", checkbox.checked);
+        checkbox.addEventListener("change", syncState);
+        syncState();
       });
     </script>
   </body>

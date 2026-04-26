@@ -43,10 +43,10 @@
 
     <div class="approval-form-list">
       {% for approval in approval_form_entries %}
-      <article class="approval-form-card">
+      <article class="approval-form-card approval-toggle-card {% if approval['selected'] %}is-selected{% endif %}" data-approval-card>
         <div class="approval-form-head">
           <label class="toggle-row">
-            <input type="checkbox" name="approval_enabled_{{ approval['approval_type'] }}" {% if approval["selected"] %}checked{% endif %} />
+            <input type="checkbox" name="approval_enabled_{{ approval['approval_type'] }}" {% if approval["selected"] %}checked{% endif %} data-approval-toggle />
             <span class="approval-badge-square badge-{{ approval['approval_type']|lower|replace(' ', '-') }}">{{ approval["approval_type"] }}</span>
             <div>
               <strong>{{ approval["approval_type"] }}</strong>
@@ -54,7 +54,7 @@
             </div>
           </label>
         </div>
-        <div class="three-column-form">
+        <div class="three-column-form approval-fields">
           <label>
             <span>Issue date</span>
             <input type="date" name="issue_date_{{ approval['approval_type'] }}" value="{{ approval['issue_date'] }}" />

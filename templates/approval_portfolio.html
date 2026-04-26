@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}{{ approval_filter }} Portfolio | ClearPath{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb">
+  <a href="{{ url_for('dashboard') }}">Dashboard</a>
+  <span>›</span>
+  <span>{{ approval_filter }} — All projects</span>
+</nav>
+
+<section class="screen-head">
+  <div>
+    <h1>{{ approval_filter }} portfolio</h1>
+    <p class="subtle-copy">{{ approval_filter }} status across {{ portfolio["total_projects"] }} projects.</p>
+  </div>
+</section>
+
+<section class="stats-row">
+  <article class="metric-card"><span>{{ approval_filter }} projects</span><strong>{{ portfolio["approval_projects"] }}</strong></article>
+  <article class="metric-card metric-green"><span>Valid</span><strong>{{ portfolio["valid_count"] }}</strong></article>
+  <article class="metric-card metric-red"><span>Expiring / expired</span><strong>{{ portfolio["expiring_count"] }}</strong></article>
+  <article class="metric-card metric-amber"><span>Overdue conditions</span><strong>{{ portfolio["overdue_count"] }}</strong></article>
+</section>
+
+<section class="section-block">
+  <div class="section-heading-row"><h2>Needs attention</h2></div>
+  {% for row in portfolio["needs_attention"] %}
+  <a class="project-row-card attention-card" href="{{ url_for('approval_detail', project_id=row['project_id'], approval_type=approval_filter) }}">
+    <div>
+      <strong>{{ row["project_name"] }}</strong>
+      <p>{{ row["project_location"] }}</p>
+    </div>
+    <div class="portfolio-meta-grid">
+      <span>Issued {{ row["approval"]["issue_date"] or "Not set" }}</span>
+      <span>Expires {{ row["approval"]["expiry_date"] or "Not set" }}</span>
+      <span class="mini-pill state-{{ row['approval']['expiry_state']|lower|replace(' ', '-') }}">{{ row["approval"]["expiry_state"] }}</span>
+      <span class="mini-pill pill-overdue">{% if row["overdue_count"] %}{{ row["overdue_count"] }} overdue{% elif row["due_soon_count"] %}{{ row["due_soon_count"] }} due soon{% else %}{{ row["condition_count"] }} total{% endif %}</span>
+    </div>
+  </a>
+  {% else %}
+  <p class="subtle-copy">No projects need immediate attention.</p>
+  {% endfor %}
+</section>
+
+<section class="section-block">
+  <div class="section-heading-row"><h2>Healthy</h2></div>
+  {% for row in portfolio["healthy"] %}
+  <a class="project-row-card" href="{{ url_for('approval_detail', project_id=row['project_id'], approval_type=approval_filter) }}">
+    <div>
+      <strong>{{ row["project_name"] }}</strong>
+      <p>{{ row["project_location"] }}</p>
+    </div>
+    <div class="portfolio-meta-grid">
+      <span>Issued {{ row["approval"]["issue_date"] or "Not set" }}</span>
+      <span>Expires {{ row["approval"]["expiry_date"] or "Not set" }}</span>
+      <span class="mini-pill state-{{ row['approval']['expiry_state']|lower|replace(' ', '-') }}">{{ row["approval"]["expiry_state"] }}</span>
+      <span class="mini-pill pill-clear">All clear</span>
+    </div>
+  </a>
+  {% else %}
+  <p class="subtle-copy">No healthy {{ approval_filter }} approvals yet.</p>
+  {% endfor %}
+</section>
+
+<section class="section-block">
+  <div class="section-heading-row"><h2>No record</h2></div>
+  {% for row in portfolio["no_record"] %}
+  <a class="project-row-card ghost-row" href="{{ url_for('edit_project', project_id=row['project_id']) }}">
+    <div>
+      <strong>{{ row["project_name"] }}</strong>
+      <p>{{ row["project_location"] }}</p>
+    </div>
+    <div class="row-pill-set">
+      <span class="mini-pill">+ Add {{ approval_filter }}</span>
+    </div>
+  </a>
+  {% else %}
+  <p class="subtle-copy">Every project already has {{ approval_filter }} on record.</p>
+  {% endfor %}
+</section>
+{% endblock %}

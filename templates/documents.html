@@ -19,10 +19,10 @@
 <section class="stack-section">
   {% if documents %}
     {% for document in documents %}
-    <a class="project-row-card" href="{{ url_for('view_document', document_id=document['id']) }}" target="_blank" rel="noopener noreferrer">
+    <a class="project-row-card" href="{% if document['source'] == 'Compliance report' %}{{ url_for('view_report_attachment', response_id=document['id']) }}{% else %}{{ url_for('view_document', document_id=document['id']) }}{% endif %}" target="_blank" rel="noopener noreferrer">
       <div>
         <strong>{{ document["document_title"] or document["original_filename"] }}</strong>
-        <p>{{ document["project_name"] }} · {{ document["project_location"] }}</p>
+        <p>{{ document["project_name"] }} · {{ document["project_location"] }} · {{ document["source"] }}</p>
       </div>
       <div class="row-pill-set">
         {% if document["version_notes"] %}

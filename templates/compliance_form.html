@@ -23,6 +23,14 @@
 <section class="flat-panel">
   <form method="post" class="stack-form schedule-form" data-schedule-preview data-approvals='{{ approval_context|tojson }}'>
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+    <label>
+      <span>NOC / approval</span>
+      <select name="approval_type">
+        {% for option in approval_options %}
+        <option value="{{ option }}" {% if item["approval_type"] == option %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
     <label><span>Condition description</span><textarea name="condition_description" rows="4" required>{{ item["condition_description"] }}</textarea></label>
     <label><span>Action to be taken</span><textarea name="action_to_be_taken" rows="3">{{ item["action_to_be_taken"] }}</textarea></label>
 
@@ -76,7 +84,7 @@
     <p class="subtle-copy" data-schedule-preview-text>{{ schedule_preview_text }}</p>
 
     <div class="form-actions">
-      <a class="secondary-button button-link" href="{{ url_for('project_detail', project_id=item['project_id']) }}">Cancel</a>
+      <a class="secondary-button button-link" href="{{ url_for('approval_detail', project_id=item['project_id'], approval_type=item['approval_type']) }}">Cancel</a>
       <button type="submit" class="primary-button">Save changes</button>
     </div>
   </form>

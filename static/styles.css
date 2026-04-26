@@ -1067,6 +1067,240 @@ td {
   margin-bottom: 16px;
 }
 
+.clickable-card {
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.clickable-card:hover,
+.project-row-card:hover,
+.overview-item-row:hover {
+  box-shadow: 0 8px 28px rgba(20, 35, 27, 0.06);
+  transform: translateY(-1px);
+}
+
+.approval-row-card small,
+.portfolio-meta-grid span,
+.text-static {
+  color: var(--muted);
+}
+
+.stats-row-compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.tab-strip {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 18px;
+}
+
+.tab-strip a {
+  padding: 0 0 12px;
+  font-size: 14px;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+}
+
+.tab-strip a.active {
+  color: var(--green);
+  border-color: var(--green);
+}
+
+.date-state-overdue {
+  color: var(--red);
+}
+
+.date-state-due-in-7-days {
+  color: var(--amber);
+}
+
+.date-state-pending,
+.date-state-completed {
+  color: var(--green);
+}
+
+.occurrence-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.occurrence-chip {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--surface-muted);
+  display: grid;
+  gap: 4px;
+}
+
+.occurrence-chip strong {
+  font-size: 12px;
+}
+
+.occurrence-chip span,
+.occurrence-chip small {
+  font-size: 12px;
+}
+
+.text-action {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--green);
+  font-size: 12px;
+  text-align: left;
+}
+
+.inline-form {
+  display: inline-flex;
+}
+
+.period-selector-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.mini-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.mini-check input {
+  width: auto;
+}
+
+.report-grid-wrap {
+  overflow: auto;
+}
+
+.report-grid {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 980px;
+}
+
+.report-grid th,
+.report-grid td {
+  border: 1px solid var(--line);
+  padding: 10px;
+  vertical-align: top;
+}
+
+.report-grid th {
+  background: var(--surface-soft);
+}
+
+.report-condition-col {
+  min-width: 260px;
+}
+
+.portfolio-meta-grid {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+  text-align: right;
+}
+
+.attention-card {
+  border-left: 3px solid var(--amber);
+}
+
+.ghost-row {
+  border-style: dashed;
+}
+
+.collapsible-stack details > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.collapsible-stack details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.collapsible-stack details > summary::before {
+  content: "›";
+  display: inline-block;
+  margin-right: 8px;
+  color: var(--muted);
+  transform: rotate(0deg);
+  transition: transform 0.18s ease;
+}
+
+.collapsible-stack details[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.pill-ec,
+.badge-ec {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.pill-cte,
+.badge-cte {
+  background: #eef3fb;
+  color: var(--blue);
+}
+
+.pill-cto,
+.badge-cto {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.approval-toggle-card .approval-fields {
+  display: none;
+}
+
+.approval-toggle-card.is-selected .approval-fields {
+  display: grid;
+}
+
+.calendar-entry.entry-overdue,
+.calendar-entry.entry-red {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.calendar-entry.entry-due-in-7-days,
+.calendar-entry.entry-amber {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.calendar-entry.entry-pending,
+.calendar-entry.entry-completed,
+.calendar-entry.entry-green {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.mini-dot-stack {
+  min-height: 10px;
+}
+
+.state-overdue {
+  border-left-color: var(--red);
+}
+
+.state-due-in-7-days {
+  border-left-color: var(--amber);
+}
+
+.state-pending,
+.state-completed {
+  border-left-color: var(--green);
+}
+
 @media (max-width: 1180px) {
   .project-hero-grid,
   .split-workspace,
@@ -1082,5 +1316,30 @@ td {
 
   .app-shell {
     grid-template-columns: 180px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .topbar {
+    justify-content: flex-start;
+    padding-right: 110px;
+  }
+
+  .stats-row-compact,
+  .stats-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .tab-strip {
+    overflow-x: auto;
   }
 }

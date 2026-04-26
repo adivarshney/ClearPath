@@ -29,6 +29,7 @@
         <thead>
           <tr>
             <th>Condition</th>
+            <th>NOC</th>
             <th>Action</th>
             <th>Due date</th>
             <th>Frequency</th>
@@ -40,6 +41,13 @@
           {% for item in items %}
           <tr>
             <td>{{ item["condition_description"] }}</td>
+            <td>
+              <select name="approval_type_{{ item['id'] }}">
+                {% for option in approval_options %}
+                <option value="{{ option }}" {% if item["approval_type"] == option %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+              </select>
+            </td>
             <td><textarea name="action_to_be_taken_{{ item['id'] }}" rows="3">{{ item["action_to_be_taken"] }}</textarea></td>
             <td><input type="date" name="due_date_{{ item['id'] }}" value="{{ item['due_date'] }}" /></td>
             <td>

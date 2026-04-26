@@ -16,22 +16,22 @@
   </div>
 </section>
 
-<section class="stack-section">
+<section class="stack-section collapsible-stack">
   {% for project in grouped_projects %}
-  <article class="grouped-list-card">
-    <div class="grouped-list-head">
+  <details class="grouped-list-card" open>
+    <summary class="grouped-list-head">
       <div>
         <strong>{{ project["project_name"] }}</strong>
         <p>{{ project["project_location"] }}</p>
       </div>
       <span class="mini-pill pill-overdue">{{ project["overdue_count"] }} overdue</span>
-    </div>
+    </summary>
     <div class="grouped-items">
       {% for item in project["items"] %}
-      <a class="overview-item-row state-overdue" href="{{ url_for('project_detail', project_id=item['project_id']) }}">
+      <a class="overview-item-row state-overdue" href="{{ url_for('approval_detail', project_id=item['project_id'], approval_type=item['approval_type']) }}">
         <div>
           <strong>{{ item["condition_description"] }}</strong>
-          <p>{{ item["project_name"] }}</p>
+          <p><span class="mini-pill pill-{{ item['approval_type']|lower|replace(' ', '-') }}">{{ item["approval_type"] }}</span></p>
         </div>
         <div class="overview-meta">
           <span>{{ item["display_due_date"] }}</span>
@@ -40,7 +40,7 @@
       </a>
       {% endfor %}
     </div>
-  </article>
+  </details>
   {% else %}
   <div class="empty-state">
     <h3>No overdue conditions</h3>

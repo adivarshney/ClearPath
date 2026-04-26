@@ -26,6 +26,10 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFError, CSRFProtect, generate_csrf
 from openpyxl import Workbook, load_workbook
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -69,6 +73,10 @@ IMPORT_HEADER_ALIASES = {
     "condition description": "condition_description",
     "condition": "condition_description",
     "description": "condition_description",
+    "approval": "approval_type",
+    "noc": "approval_type",
+    "noc type": "approval_type",
+    "approval type": "approval_type",
     "action to be taken": "action_to_be_taken",
     "action": "action_to_be_taken",
     "due date": "due_date",
@@ -90,6 +98,8 @@ SCHEMA_WHITELIST = {
     "project_approvals": {"issue_date", "expiry_date", "approval_notes"},
     "documents": {"document_title", "version_notes"},
 }
+APPROVAL_PORTFOLIO_TYPES = {"EC", "CTE", "CTO"}
+REPORT_TABS = {"conditions", "compliance-report", "documents", "activity"}
 
 
 secret_key = os.environ.get("SECRET_KEY")
@@ -157,6 +167,7 @@ def migrate_documents_table(db):
 def compliance_table_needs_rebuild(db):
     existing_columns = table_columns(db, "compliance_items")
     required_columns = {
+        "approval_type",
         "frequency",
         "schedule_source",
         "submitted_to",
@@ -185,6 +196,7 @@ def migrate_compliance_items_table(db):
         CREATE TABLE compliance_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id INTEGER NOT NULL,
+            approval_type TEXT NOT NULL DEFAULT '',
             condition_description TEXT NOT NULL,
             action_to_be_taken TEXT NOT NULL DEFAULT '',
             due_date TEXT NOT NULL DEFAULT '',
@@ -212,6 +224,7 @@ def migrate_compliance_items_table(db):
         INSERT INTO compliance_items (
             id,
             project_id,
+            approval_type,
             condition_description,
             action_to_be_taken,
             due_date,
@@ -228,6 +241,7 @@ def migrate_compliance_items_table(db):
         SELECT
             id,
             project_id,
+            {select_expr('approval_type')},
             condition_description,
             {select_expr('action_to_be_taken')},
             {select_expr('due_date')},
@@ -264,6 +278,47 @@ def create_history_table(db):
             item_snapshot TEXT NOT NULL DEFAULT '',
             actor_email TEXT NOT NULL DEFAULT '',
             changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+
+def create_occurrence_table(db):
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS compliance_occurrences (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            compliance_item_id INTEGER NOT NULL,
+            occurrence_date TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('Pending', 'Completed', 'On hold', 'Not applicable')) DEFAULT 'Pending',
+            response_notes TEXT NOT NULL DEFAULT '',
+            completed_at TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(compliance_item_id, occurrence_date),
+            FOREIGN KEY (compliance_item_id) REFERENCES compliance_items(id) ON DELETE CASCADE
+        )
+        """
+    )
+
+
+def create_compliance_report_tables(db):
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS compliance_report_responses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL,
+            approval_type TEXT NOT NULL,
+            compliance_item_id INTEGER NOT NULL,
+            period_label TEXT NOT NULL,
+            period_due_date TEXT NOT NULL DEFAULT '',
+            response_text TEXT NOT NULL DEFAULT '',
+            attachment_original_filename TEXT NOT NULL DEFAULT '',
+            attachment_stored_filename TEXT NOT NULL DEFAULT '',
+            annexure_number INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(project_id, approval_type, compliance_item_id, period_label),
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+            FOREIGN KEY (compliance_item_id) REFERENCES compliance_items(id) ON DELETE CASCADE
         )
         """
     )
@@ -308,6 +363,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS compliance_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id INTEGER NOT NULL,
+            approval_type TEXT NOT NULL DEFAULT '',
             condition_description TEXT NOT NULL,
             action_to_be_taken TEXT NOT NULL DEFAULT '',
             due_date TEXT NOT NULL DEFAULT '',
@@ -339,6 +395,26 @@ def init_db():
     migrate_compliance_items_table(db)
     migrate_documents_table(db)
     create_history_table(db)
+    create_occurrence_table(db)
+    create_compliance_report_tables(db)
+    db.execute(
+        """
+        UPDATE compliance_items
+        SET approval_type = COALESCE(
+            NULLIF(approval_type, ''),
+            NULLIF(schedule_source, ''),
+            (
+                SELECT pa.approval_type
+                FROM project_approvals pa
+                WHERE pa.project_id = compliance_items.project_id
+                ORDER BY CASE pa.approval_type WHEN 'EC' THEN 1 WHEN 'CTE' THEN 2 WHEN 'CTO' THEN 3 ELSE 9 END, pa.id
+                LIMIT 1
+            ),
+            ''
+        )
+        WHERE approval_type = ''
+        """
+    )
     db.commit()
     db.close()
 
@@ -384,6 +460,21 @@ def get_owned_project(project_id):
     if project is None:
         abort(404)
     return project
+
+
+def get_owned_project_approval(project_id, approval_type):
+    project = get_owned_project(project_id)
+    approval = get_db().execute(
+        """
+        SELECT *
+        FROM project_approvals
+        WHERE project_id = ? AND approval_type = ?
+        """,
+        (project_id, approval_type),
+    ).fetchone()
+    if approval is None:
+        abort(404)
+    return project, approval
 
 
 def get_owned_compliance_item(item_id):
@@ -470,6 +561,15 @@ def normalize_frequency(value, due_date=""):
     if cleaned in frequency_map:
         return frequency_map[cleaned]
     return "One-time" if due_date else "General"
+
+
+def normalize_approval_type(value, allowed_options=None):
+    cleaned = clean_text(value).upper()
+    if not cleaned:
+        return ""
+    options = allowed_options or DEFAULT_APPROVAL_TYPES
+    normalized_lookup = {option.upper(): option for option in options}
+    return normalized_lookup.get(cleaned, "")
 
 
 def normalize_submission_mode(value):
@@ -562,6 +662,7 @@ def parse_import_matrix(rows):
             responsible_person = clean_text(mapped.get("responsible_person"))
             acknowledgment_number = clean_text(mapped.get("acknowledgment_number"))
             remarks = clean_text(mapped.get("remarks"))
+            approval_type = clean_text(mapped.get("approval_type"))
         else:
             non_empty_cells = [clean_text(cell) for cell in row if clean_text(cell)]
             if not non_empty_cells:
@@ -580,9 +681,11 @@ def parse_import_matrix(rows):
             responsible_person = ""
             acknowledgment_number = ""
             remarks = ""
+            approval_type = ""
 
         normalized_rows.append(
             {
+                "approval_type": approval_type,
                 "condition_description": condition_description,
                 "action_to_be_taken": action_to_be_taken,
                 "due_date": due_date,
@@ -623,6 +726,7 @@ def build_sample_import_csv():
     writer = csv.writer(output)
     writer.writerow(
         [
+            "Approval Type",
             "Condition Description",
             "Action To Be Taken",
             "Due Date",
@@ -638,6 +742,7 @@ def build_sample_import_csv():
     )
     writer.writerow(
         [
+            "EC",
             "Submit half-yearly compliance report to the regional office.",
             "Prepare the report, review internally, and submit before the deadline.",
             "2026-07-15",
@@ -653,6 +758,7 @@ def build_sample_import_csv():
     )
     writer.writerow(
         [
+            "EC",
             "Submit quarterly monitoring summary from EC grant date.",
             "Compile monitoring results and submit to the authority.",
             "",
@@ -752,18 +858,35 @@ def derive_item_status(status, due_date_value):
 
 
 def annotate_compliance_items(rows, approval_lookup):
+    occurrence_map = fetch_occurrence_rows([row["id"] for row in rows])
     annotated = []
     for row in rows:
         item = dict(row)
-        item["next_due_date"] = compute_next_due_date(item, approval_lookup)
+        item_occurrences = build_occurrence_records(item, approval_lookup, occurrence_map.get(item["id"], {}))
+        item["occurrences"] = item_occurrences
+        item["occurrence_summary"] = summarize_occurrences(item_occurrences)
+        item["is_recurring"] = bool(item_occurrences)
+        item["next_due_date"] = (
+            item["occurrence_summary"]["next_due_date"] if item_occurrences else compute_next_due_date(item, approval_lookup)
+        )
         item["display_due_date"] = item["next_due_date"] or item["due_date"]
         item["derived_status"] = derive_item_status(item["status"], item["display_due_date"])
+        if item_occurrences:
+            if item["occurrence_summary"]["overdue"]:
+                item["derived_status"] = "Overdue"
+            elif item["occurrence_summary"]["upcoming"]:
+                item["derived_status"] = "Due in 7 days"
+            elif item["occurrence_summary"]["pending"]:
+                item["derived_status"] = "Pending"
+            elif item["occurrence_summary"]["completed"] == len(item_occurrences):
+                item["derived_status"] = "Completed"
         item["has_due_date"] = bool(item["display_due_date"])
         item["is_overdue"] = item["derived_status"] == "Overdue"
         item["is_due_soon"] = item["derived_status"] == "Due in 7 days"
         item["schedule_label"] = item["frequency"]
         if item.get("schedule_source"):
             item["schedule_label"] = f"{item['frequency']} from {item['schedule_source']}"
+        item["status_summary_label"] = format_occurrence_summary(item["occurrence_summary"]) if item_occurrences else item["derived_status"]
         annotated.append(item)
     return annotated
 
@@ -942,25 +1065,36 @@ def build_project_calendar(project_id, months=1):
         if len(item["condition_description"]) > 56:
             compact_label += "..."
         for occurrence in generate_schedule_dates(dict(item), approval_lookup, start, window_end):
+            occurrence_kind = "green"
+            if occurrence.isoformat() < date.today().isoformat():
+                occurrence_kind = "red"
+            elif occurrence.isoformat() <= (date.today() + timedelta(days=15)).isoformat():
+                occurrence_kind = "amber"
             add_event(
                 occurrence.isoformat(),
                 f"{item['frequency']}: {compact_label}",
-                "due",
-                url_for("project_detail", project_id=project["id"]),
+                occurrence_kind,
+                url_for("approval_detail", project_id=project["id"], approval_type=item["approval_type"]),
             )
 
     for approval in approvals:
         add_event(
             approval["issue_date"],
             f"{approval['approval_type']} issue date",
-            "issue",
-            url_for("edit_project", project_id=project["id"]),
+            "green",
+            url_for("approval_detail", project_id=project["id"], approval_type=approval["approval_type"]),
         )
+        expiry_kind = "green"
+        if approval["expiry_date"]:
+            if approval["expiry_date"] < date.today().isoformat():
+                expiry_kind = "red"
+            elif approval["expiry_date"] <= (date.today() + timedelta(days=15)).isoformat():
+                expiry_kind = "amber"
         add_event(
             approval["expiry_date"],
             f"{approval['approval_type']} expiry date",
-            "expiry",
-            url_for("edit_project", project_id=project["id"]),
+            expiry_kind,
+            url_for("approval_detail", project_id=project["id"], approval_type=approval["approval_type"]),
         )
 
     for _ in range(months):
@@ -1006,44 +1140,65 @@ def fetch_project_approvals(project_id):
     ).fetchall()
 
 
-def fetch_project_compliance_items(project_id):
+def fetch_project_compliance_items(project_id, approval_type=None):
+    filters = ["ci.project_id = ?"]
+    params = [project_id]
+    if approval_type:
+        filters.append("ci.approval_type = ?")
+        params.append(approval_type)
     return get_db().execute(
-        """
+        f"""
         SELECT ci.*,
                COUNT(d.id) AS document_count
         FROM compliance_items ci
         LEFT JOIN documents d ON d.compliance_item_id = ci.id
-        WHERE ci.project_id = ?
+        WHERE {' AND '.join(filters)}
         GROUP BY ci.id
         ORDER BY CASE WHEN ci.due_date = '' THEN 1 ELSE 0 END, ci.due_date ASC, ci.created_at DESC
         """,
-        (project_id,),
+        params,
     ).fetchall()
 
 
-def fetch_project_documents(project_id):
+def fetch_project_documents(project_id, approval_type=None):
+    filters = ["ci.project_id = ?"]
+    params = [project_id]
+    if approval_type:
+        filters.append("ci.approval_type = ?")
+        params.append(approval_type)
     return get_db().execute(
-        """
-        SELECT d.*, ci.project_id
+        f"""
+        SELECT d.*, ci.project_id, ci.approval_type, ci.condition_description
         FROM documents d
         JOIN compliance_items ci ON ci.id = d.compliance_item_id
-        WHERE ci.project_id = ?
+        WHERE {' AND '.join(filters)}
         ORDER BY d.uploaded_at DESC
         """,
-        (project_id,),
+        params,
     ).fetchall()
 
 
-def fetch_project_history(project_id, limit=12):
-    return get_db().execute(
+def fetch_project_history(project_id, limit=12, approval_type=None):
+    params = [project_id]
+    filter_sql = ""
+    if approval_type:
+        filter_sql = """
+            AND compliance_item_id IN (
+                SELECT id FROM compliance_items WHERE project_id = ? AND approval_type = ?
+            )
         """
+        params.extend([project_id, approval_type])
+    params.append(limit)
+    return get_db().execute(
+        f"""
         SELECT *
         FROM compliance_item_history
         WHERE project_id = ?
+        {filter_sql}
         ORDER BY changed_at DESC, id DESC
         LIMIT ?
         """,
-        (project_id, limit),
+        params,
     ).fetchall()
 
 
@@ -1052,6 +1207,95 @@ def build_documents_by_item(documents):
     for document in documents:
         docs_by_item.setdefault(document["compliance_item_id"], []).append(document)
     return docs_by_item
+
+
+def fetch_occurrence_rows(item_ids):
+    if not item_ids:
+        return {}
+    placeholders = ",".join("?" for _ in item_ids)
+    rows = get_db().execute(
+        f"""
+        SELECT *
+        FROM compliance_occurrences
+        WHERE compliance_item_id IN ({placeholders})
+        ORDER BY occurrence_date ASC
+        """,
+        item_ids,
+    ).fetchall()
+    occurrence_map = {}
+    for row in rows:
+        occurrence_map.setdefault(row["compliance_item_id"], {})[row["occurrence_date"]] = dict(row)
+    return occurrence_map
+
+
+def build_occurrence_records(item, approval_lookup, occurrence_rows, window_limit=60):
+    if item["frequency"] in {"General", "One-time", ""}:
+        return []
+
+    interval_months = recurrence_interval_months(item["frequency"])
+    if not interval_months:
+        return []
+
+    anchor_date, end_date = resolve_schedule_anchor(item, approval_lookup)
+    if not anchor_date:
+        return []
+
+    records = []
+    current_date = anchor_date
+    count = 0
+    while count < window_limit:
+        if end_date and current_date > end_date:
+            break
+        iso_date = current_date.isoformat()
+        stored = occurrence_rows.get(iso_date, {})
+        stored_status = stored.get("status") or "Pending"
+        derived_status = derive_item_status(stored_status, iso_date)
+        records.append(
+            {
+                "date": iso_date,
+                "label": current_date.strftime("%b %Y"),
+                "status": stored_status,
+                "derived_status": derived_status,
+                "response_notes": stored.get("response_notes", ""),
+            }
+        )
+        current_date = add_months(current_date, interval_months)
+        count += 1
+    return records
+
+
+def summarize_occurrences(occurrences):
+    if not occurrences:
+        return {"completed": 0, "overdue": 0, "upcoming": 0, "pending": 0, "next_due_date": ""}
+
+    summary = {"completed": 0, "overdue": 0, "upcoming": 0, "pending": 0}
+    next_due_date = ""
+    for occurrence in occurrences:
+        if occurrence["status"] == "Completed":
+            summary["completed"] += 1
+            continue
+        if occurrence["derived_status"] == "Overdue":
+            summary["overdue"] += 1
+        elif occurrence["derived_status"] == "Due in 7 days":
+            summary["upcoming"] += 1
+        else:
+            summary["pending"] += 1
+        if not next_due_date:
+            next_due_date = occurrence["date"]
+    summary["next_due_date"] = next_due_date
+    return summary
+
+
+def format_occurrence_summary(summary):
+    parts = []
+    if summary["overdue"]:
+        parts.append(f"{summary['overdue']} overdue")
+    if summary["completed"]:
+        parts.append(f"{summary['completed']} completed")
+    upcoming_total = summary["upcoming"] + summary["pending"]
+    if upcoming_total:
+        parts.append(f"{upcoming_total} upcoming")
+    return ", ".join(parts) or "No occurrences yet"
 
 
 def fetch_user_approval_rows(user_id):
@@ -1088,13 +1332,30 @@ def build_project_approval_lookup(approval_rows):
 
 def annotate_user_compliance_items(user_id):
     approval_lookup = build_project_approval_lookup(fetch_user_approval_rows(user_id))
+    rows = fetch_user_compliance_rows(user_id)
+    occurrence_map = fetch_occurrence_rows([row["id"] for row in rows])
     annotated = []
-    for row in fetch_user_compliance_rows(user_id):
+    for row in rows:
         item = dict(row)
         project_approvals = approval_lookup.get(item["project_id"], {})
-        item["next_due_date"] = compute_next_due_date(item, project_approvals)
+        item_occurrences = build_occurrence_records(item, project_approvals, occurrence_map.get(item["id"], {}))
+        item["occurrences"] = item_occurrences
+        item["occurrence_summary"] = summarize_occurrences(item_occurrences)
+        item["is_recurring"] = bool(item_occurrences)
+        item["next_due_date"] = (
+            item["occurrence_summary"]["next_due_date"] if item_occurrences else compute_next_due_date(item, project_approvals)
+        )
         item["display_due_date"] = item["next_due_date"] or item["due_date"]
         item["derived_status"] = derive_item_status(item["status"], item["display_due_date"])
+        if item_occurrences:
+            if item["occurrence_summary"]["overdue"]:
+                item["derived_status"] = "Overdue"
+            elif item["occurrence_summary"]["upcoming"]:
+                item["derived_status"] = "Due in 7 days"
+            elif item["occurrence_summary"]["pending"]:
+                item["derived_status"] = "Pending"
+            elif item["occurrence_summary"]["completed"] == len(item_occurrences):
+                item["derived_status"] = "Completed"
         annotated.append(item)
     return annotated
 
@@ -1129,7 +1390,9 @@ def build_project_reminders(items):
 
 
 def fetch_user_documents(user_id):
-    return get_db().execute(
+    action_documents = [
+        dict(row)
+        for row in get_db().execute(
         """
         SELECT d.*, ci.project_id, p.name AS project_name, p.location AS project_location
         FROM documents d
@@ -1140,6 +1403,35 @@ def fetch_user_documents(user_id):
         """,
         (user_id,),
     ).fetchall()
+    ]
+    for document in action_documents:
+        document["source"] = "Action to be taken"
+
+    report_documents = [
+        dict(row)
+        for row in get_db().execute(
+            """
+            SELECT crr.id, crr.attachment_original_filename AS original_filename,
+                   crr.attachment_stored_filename AS stored_filename,
+                   crr.updated_at AS uploaded_at,
+                   crr.annexure_number,
+                   crr.period_label,
+                   p.name AS project_name,
+                   p.location AS project_location,
+                   crr.approval_type
+            FROM compliance_report_responses crr
+            JOIN projects p ON p.id = crr.project_id
+            WHERE p.user_id = ? AND crr.attachment_stored_filename != ''
+            ORDER BY crr.updated_at DESC
+            """,
+            (user_id,),
+        ).fetchall()
+    ]
+    for document in report_documents:
+        document["document_title"] = f"Annexure {document['annexure_number']} · {document['period_label']}"
+        document["source"] = "Compliance report"
+
+    return sorted(action_documents + report_documents, key=lambda row: row["uploaded_at"], reverse=True)
 
 
 def build_project_cards(user_id, approval_filter=None):
@@ -1188,6 +1480,83 @@ def build_project_cards(user_id, approval_filter=None):
     return cards
 
 
+def build_project_approval_summaries(project_id):
+    approvals = annotate_approval_rows(fetch_project_approvals(project_id))
+    approval_lookup = build_approval_lookup(approvals)
+    items = annotate_compliance_items(fetch_project_compliance_items(project_id), approval_lookup)
+    items_by_approval = {}
+    for item in items:
+        items_by_approval.setdefault(item["approval_type"], []).append(item)
+
+    summaries = []
+    for approval in approvals:
+        approval_items = items_by_approval.get(approval["approval_type"], [])
+        overdue_count = sum(1 for item in approval_items if item["derived_status"] == "Overdue")
+        due_soon_count = sum(1 for item in approval_items if item["derived_status"] == "Due in 7 days")
+        summaries.append(
+            {
+                **approval,
+                "condition_count": len(approval_items),
+                "overdue_count": overdue_count,
+                "due_soon_count": due_soon_count,
+            }
+        )
+    return summaries
+
+
+def build_approval_portfolio(user_id, approval_type):
+    projects_rows = get_db().execute(
+        """
+        SELECT p.id, p.name, p.location, p.client_name
+        FROM projects p
+        WHERE p.user_id = ?
+        ORDER BY p.name ASC
+        """,
+        (user_id,),
+    ).fetchall()
+    approval_rows = [row for row in fetch_user_approval_rows(user_id) if row["approval_type"] == approval_type]
+    approval_by_project = {row["project_id"]: annotate_approval_rows([row])[0] for row in approval_rows}
+    items = [item for item in annotate_user_compliance_items(user_id) if item["approval_type"] == approval_type]
+    items_by_project = {}
+    for item in items:
+        items_by_project.setdefault(item["project_id"], []).append(item)
+
+    portfolio_rows = []
+    for project in projects_rows:
+        approval = approval_by_project.get(project["id"])
+        project_items = items_by_project.get(project["id"], [])
+        overdue_count = sum(1 for item in project_items if item["derived_status"] == "Overdue")
+        due_soon_count = sum(1 for item in project_items if item["derived_status"] == "Due in 7 days")
+        row = {
+            "project_id": project["id"],
+            "project_name": project["name"],
+            "project_location": project["location"],
+            "approval": approval,
+            "condition_count": len(project_items),
+            "overdue_count": overdue_count,
+            "due_soon_count": due_soon_count,
+        }
+        if approval is None:
+            row["portfolio_state"] = "no-record"
+        elif approval["expiry_state"] in {"Expired", "Expiring soon"} or overdue_count or due_soon_count:
+            row["portfolio_state"] = "needs-attention"
+        else:
+            row["portfolio_state"] = "healthy"
+        portfolio_rows.append(row)
+
+    return {
+        "rows": portfolio_rows,
+        "needs_attention": [row for row in portfolio_rows if row["portfolio_state"] == "needs-attention"],
+        "healthy": [row for row in portfolio_rows if row["portfolio_state"] == "healthy"],
+        "no_record": [row for row in portfolio_rows if row["portfolio_state"] == "no-record"],
+        "total_projects": len(projects_rows),
+        "approval_projects": len(approval_rows),
+        "valid_count": sum(1 for row in portfolio_rows if row["approval"] and row["approval"]["expiry_state"] == "Active"),
+        "expiring_count": sum(1 for row in portfolio_rows if row["approval"] and row["approval"]["expiry_state"] in {"Expired", "Expiring soon"}),
+        "overdue_count": sum(row["overdue_count"] for row in portfolio_rows),
+    }
+
+
 def group_items_for_overview(items, kind):
     grouped = {}
     for item in items:
@@ -1234,7 +1603,7 @@ def build_cross_project_calendar(user_id, month_offset=0):
                 "label": item["project_name"],
                 "meta": item["condition_description"],
                 "kind": item["derived_status"],
-                "href": url_for("project_detail", project_id=item["project_id"]),
+                "href": url_for("approval_detail", project_id=item["project_id"], approval_type=item["approval_type"]),
             }
         )
 
@@ -1261,6 +1630,162 @@ def build_cross_project_calendar(user_id, month_offset=0):
         "month_offset": month_offset,
         "days": days,
     }
+
+
+def build_approval_report_periods(approval):
+    issue_date = parse_iso_date(approval["issue_date"])
+    expiry_date = parse_iso_date(approval["expiry_date"])
+    if not issue_date:
+        return []
+
+    periods = []
+    if approval["approval_type"] == "EC":
+        start_year = issue_date.year
+        end_year = (expiry_date or add_months(issue_date, 72)).year
+        for year in range(start_year, end_year + 1):
+            for month in (6, 12):
+                period_date = date(year, month, 1)
+                if period_date < issue_date:
+                    continue
+                if expiry_date and period_date > expiry_date:
+                    continue
+                periods.append(
+                    {
+                        "label": period_date.strftime("%b %Y"),
+                        "date": period_date.isoformat(),
+                        "key": period_date.strftime("%Y%m%d"),
+                    }
+                )
+    else:
+        current_date = issue_date
+        limit_date = expiry_date or add_months(issue_date, 36)
+        while current_date <= limit_date:
+            periods.append(
+                {
+                    "label": current_date.strftime("%b %Y"),
+                    "date": current_date.isoformat(),
+                    "key": current_date.strftime("%Y%m%d"),
+                }
+            )
+            current_date = add_months(current_date, 6)
+    return periods
+
+
+def fetch_compliance_report_responses(project_id, approval_type):
+    rows = get_db().execute(
+        """
+        SELECT *
+        FROM compliance_report_responses
+        WHERE project_id = ? AND approval_type = ?
+        ORDER BY period_due_date ASC, compliance_item_id ASC
+        """,
+        (project_id, approval_type),
+    ).fetchall()
+    return {
+        (row["compliance_item_id"], row["period_label"]): dict(row)
+        for row in rows
+    }
+
+
+def next_annexure_number(project_id, approval_type):
+    row = get_db().execute(
+        """
+        SELECT COALESCE(MAX(annexure_number), 0) AS value
+        FROM compliance_report_responses
+        WHERE project_id = ? AND approval_type = ?
+        """,
+        (project_id, approval_type),
+    ).fetchone()
+    return (row["value"] if row else 0) + 1
+
+
+def build_approval_documents(project_id, approval_type):
+    action_documents = [
+        {**dict(document), "source": "Action to be taken"}
+        for document in fetch_project_documents(project_id, approval_type=approval_type)
+    ]
+    report_rows = get_db().execute(
+        """
+        SELECT crr.*, ci.condition_description
+        FROM compliance_report_responses crr
+        JOIN compliance_items ci ON ci.id = crr.compliance_item_id
+        WHERE crr.project_id = ? AND crr.approval_type = ? AND crr.attachment_stored_filename != ''
+        ORDER BY crr.updated_at DESC
+        """,
+        (project_id, approval_type),
+    ).fetchall()
+    report_documents = []
+    for row in report_rows:
+        document = dict(row)
+        document["source"] = "Compliance report"
+        document["document_title"] = f"Annexure {row['annexure_number']} · {row['period_label']}"
+        document["original_filename"] = row["attachment_original_filename"]
+        report_documents.append(document)
+    return action_documents, report_documents
+
+
+def build_report_export_workbook(project, approval, periods, items, responses, selected_keys):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = f"{approval['approval_type']} report"
+    sheet.append([f"{approval['approval_type']} Compliance Report"])
+    sheet.append([project["name"], project["location"]])
+    sheet.append([])
+
+    selected_periods = [period for period in periods if not selected_keys or period["key"] in selected_keys]
+    header = ["Condition"] + [period["label"] for period in selected_periods]
+    sheet.append(header)
+    for item in items:
+        row = [item["condition_description"]]
+        for period in selected_periods:
+            response = responses.get((item["id"], period["label"]), {})
+            text_value = response.get("response_text", "")
+            if response.get("annexure_number"):
+                text_value = f"{text_value}\nAnnexure {response['annexure_number']}".strip()
+            row.append(text_value)
+        sheet.append(row)
+    return workbook
+
+
+def build_report_pdf(project, approval, periods, items, responses, selected_keys):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), leftMargin=20, rightMargin=20, topMargin=20, bottomMargin=20)
+    styles = getSampleStyleSheet()
+    elements = [
+        Paragraph(f"{approval['approval_type']} Compliance Report", styles["Title"]),
+        Paragraph(f"{project['name']} · {project['location']}", styles["Normal"]),
+        Spacer(1, 12),
+    ]
+
+    selected_periods = [period for period in periods if not selected_keys or period["key"] in selected_keys]
+    table_data = [["Condition", *[period["label"] for period in selected_periods]]]
+    for item in items:
+        row = [Paragraph(item["condition_description"], styles["BodyText"])]
+        for period in selected_periods:
+            response = responses.get((item["id"], period["label"]), {})
+            text_value = response.get("response_text", "") or "-"
+            if response.get("annexure_number"):
+                text_value = f"{text_value}<br/>Annexure {response['annexure_number']}"
+            row.append(Paragraph(text_value, styles["BodyText"]))
+        table_data.append(row)
+
+    table = Table(table_data, repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e9f5ef")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#1a6b4a")),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d9d9d0")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#fbfbfa")]),
+            ]
+        )
+    )
+    elements.append(table)
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
 
 
 def record_history(
@@ -1309,6 +1834,8 @@ def sanitize_schedule_source(schedule_source, approval_options):
 def validate_compliance_payload(payload, approval_options):
     if not payload["condition_description"]:
         return "Condition description is required."
+    if payload["approval_type"] not in approval_options:
+        return "Choose a valid NOC / approval."
     if payload["frequency"] not in FREQUENCY_TYPES:
         return "Invalid frequency."
     if payload["schedule_source"] and payload["schedule_source"] not in approval_options:
@@ -1322,6 +1849,7 @@ def validate_compliance_payload(payload, approval_options):
 
 def get_compliance_form_payload(form, approval_options):
     payload = {
+        "approval_type": normalize_approval_type(form.get("approval_type", "").strip(), approval_options),
         "condition_description": form.get("condition_description", "").strip(),
         "action_to_be_taken": form.get("action_to_be_taken", "").strip(),
         "due_date": form.get("due_date", "").strip(),
@@ -1339,6 +1867,7 @@ def get_compliance_form_payload(form, approval_options):
 
 def compare_item_changes(existing_item, payload):
     field_labels = {
+        "approval_type": "Approval type",
         "condition_description": "Condition description",
         "action_to_be_taken": "Action to be taken",
         "due_date": "Due date",
@@ -1411,6 +1940,7 @@ def build_export_workbook(project, approvals, compliance_items):
     sheet.append([])
     sheet.append(
         [
+            "Approval",
             "Condition description",
             "Action to be taken",
             "Status",
@@ -1430,6 +1960,7 @@ def build_export_workbook(project, approvals, compliance_items):
     for item in compliance_items:
         sheet.append(
             [
+                item["approval_type"],
                 item["condition_description"],
                 item["action_to_be_taken"],
                 item["status"],
@@ -1557,8 +2088,11 @@ def dashboard():
 @login_required
 def projects():
     approval_filter = request.args.get("approval_type", "").strip()
-    if approval_filter and approval_filter not in {"EC", "CTE", "CTO"}:
+    if approval_filter and approval_filter not in APPROVAL_PORTFOLIO_TYPES:
         approval_filter = ""
+    if approval_filter:
+        portfolio = build_approval_portfolio(g.user["id"], approval_filter)
+        return render_template("approval_portfolio.html", approval_filter=approval_filter, portfolio=portfolio)
     rows = build_project_cards(g.user["id"], approval_filter=approval_filter)
     return render_template("projects.html", projects=rows, approval_filter=approval_filter)
 
@@ -1760,13 +2294,7 @@ def delete_project(project_id):
 @login_required
 def project_detail(project_id):
     project = get_owned_project(project_id)
-    status_filter = request.args.get("status_filter", "All")
-    frequency_filter = request.args.get("frequency_filter", "All")
     calendar_view = request.args.get("calendar_view", "1")
-    if status_filter not in STATUS_FILTERS:
-        status_filter = "All"
-    if frequency_filter not in {"All", *FREQUENCY_TYPES}:
-        frequency_filter = "All"
     try:
         calendar_view = int(calendar_view)
     except ValueError:
@@ -1774,37 +2302,68 @@ def project_detail(project_id):
     if calendar_view not in CALENDAR_VIEW_OPTIONS:
         calendar_view = 1
 
-    approval_rows = fetch_project_approvals(project_id)
-    approvals = annotate_approval_rows(approval_rows)
-    approval_lookup = build_approval_lookup(approval_rows)
-    compliance_items = annotate_compliance_items(fetch_project_compliance_items(project_id), approval_lookup)
-    documents = fetch_project_documents(project_id)
-    overdue_items, upcoming_items = build_project_reminders(compliance_items)
-    filtered_items = filter_compliance_items(compliance_items, status_filter, frequency_filter)
+    approvals = build_project_approval_summaries(project_id)
     calendar_months = build_project_calendar(project_id, months=calendar_view)
 
     return render_template(
         "project_detail.html",
         project=project,
         approvals=approvals,
-        compliance_items=filtered_items,
-        all_compliance_items=compliance_items,
-        documents_by_item=build_documents_by_item(documents),
-        overdue_items=overdue_items,
-        upcoming_items=upcoming_items,
-        recent_history=fetch_project_history(project_id),
-        status_filter=status_filter,
-        frequency_filter=frequency_filter,
-        status_counts=build_status_counts(compliance_items),
-        frequency_counts=build_frequency_counts(compliance_items),
-        status_filters=STATUS_FILTERS,
-        frequency_filters=["All", *FREQUENCY_TYPES],
         calendar_months=calendar_months,
         calendar_view=calendar_view,
         calendar_view_options=CALENDAR_VIEW_OPTIONS,
-        approval_options=[approval["approval_type"] for approval in approvals],
-        approval_context=approval_context_for_template(approvals),
+    )
+
+
+@app.route("/projects/<int:project_id>/approvals/<approval_type>")
+@login_required
+def approval_detail(project_id, approval_type):
+    project, approval = get_owned_project_approval(project_id, approval_type)
+    approval_rows = fetch_project_approvals(project_id)
+    approval_lookup = build_approval_lookup(approval_rows)
+    approval_options = [row["approval_type"] for row in approval_rows]
+    tab = request.args.get("tab", "conditions")
+    status_filter = request.args.get("status_filter", "All")
+    if tab not in REPORT_TABS:
+        tab = "conditions"
+    if status_filter not in STATUS_FILTERS:
+        status_filter = "All"
+
+    approval_items = annotate_compliance_items(fetch_project_compliance_items(project_id, approval_type), approval_lookup)
+    filtered_items = filter_compliance_items(approval_items, status_filter, "All")
+    periods = build_approval_report_periods(approval)
+    selected_period_keys = set(request.args.getlist("period"))
+    visible_periods = [period for period in periods if not selected_period_keys or period["key"] in selected_period_keys]
+    responses = fetch_compliance_report_responses(project_id, approval_type)
+    action_documents, report_documents = build_approval_documents(project_id, approval_type)
+    condition_count = len(approval_items)
+    overdue_count = sum(1 for item in approval_items if item["derived_status"] == "Overdue")
+    due_soon_count = sum(1 for item in approval_items if item["derived_status"] == "Due in 7 days")
+
+    return render_template(
+        "approval_detail.html",
+        project=project,
+        approval=annotate_approval_rows([approval])[0],
+        approvals=annotate_approval_rows(approval_rows),
+        active_approval_type=approval_type,
+        active_tab=tab,
+        approval_items=filtered_items,
+        all_approval_items=approval_items,
+        status_filter=status_filter,
+        status_filters=STATUS_FILTERS,
+        documents=action_documents,
+        report_documents=report_documents,
+        activity=fetch_project_history(project_id, limit=40, approval_type=approval_type),
+        periods=periods,
+        visible_periods=visible_periods,
+        responses=responses,
+        selected_period_keys=selected_period_keys,
+        approval_options=approval_options,
+        approval_context=approval_context_for_template(approval_rows),
         schedule_preview_text=build_schedule_preview("General", "", "", approval_lookup),
+        condition_count=condition_count,
+        overdue_count=overdue_count,
+        due_soon_count=due_soon_count,
     )
 
 
@@ -1849,6 +2408,9 @@ def save_bulk_edit_project(project_id):
     for item in item_rows:
         item_id = item["id"]
         payload = {
+            "approval_type": normalize_approval_type(
+                request.form.get(f"approval_type_{item_id}", item["approval_type"]).strip(), approval_options
+            ),
             "condition_description": item["condition_description"],
             "action_to_be_taken": request.form.get(f"action_to_be_taken_{item_id}", "").strip(),
             "due_date": request.form.get(f"due_date_{item_id}", "").strip(),
@@ -1875,10 +2437,11 @@ def save_bulk_edit_project(project_id):
         db.execute(
             """
             UPDATE compliance_items
-            SET action_to_be_taken = ?, due_date = ?, frequency = ?, schedule_source = ?, status = ?
+            SET approval_type = ?, action_to_be_taken = ?, due_date = ?, frequency = ?, schedule_source = ?, status = ?
             WHERE id = ?
             """,
             (
+                payload["approval_type"],
                 payload["action_to_be_taken"],
                 payload["due_date"],
                 payload["frequency"],
@@ -1938,6 +2501,7 @@ def add_compliance_item(project_id):
             """
             INSERT INTO compliance_items (
                 project_id,
+                approval_type,
                 condition_description,
                 action_to_be_taken,
                 due_date,
@@ -1950,10 +2514,11 @@ def add_compliance_item(project_id):
                 remarks,
                 status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 project["id"],
+                payload["approval_type"],
                 payload["condition_description"],
                 payload["action_to_be_taken"],
                 payload["due_date"],
@@ -1981,7 +2546,8 @@ def add_compliance_item(project_id):
     else:
         flash(error, "error")
 
-    return redirect(url_for("project_detail", project_id=project["id"]))
+    approval_type = payload["approval_type"] if error is None else normalize_approval_type(request.form.get("approval_type", ""))
+    return redirect(url_for("approval_detail", project_id=project["id"], approval_type=approval_type or approval_options[0]))
 
 
 @app.post("/projects/<int:project_id>/import")
@@ -1989,26 +2555,31 @@ def add_compliance_item(project_id):
 def import_compliance_items(project_id):
     project = get_owned_project(project_id)
     file = request.files.get("import_file")
+    approval_options = selected_project_approval_types(project_id)
+    fallback_approval_type = normalize_approval_type(request.form.get("approval_type", ""), approval_options) or (
+        approval_options[0] if approval_options else ""
+    )
 
     if file is None or not file.filename:
         flash("Choose a CSV or Excel file to import.", "error")
-        return redirect(url_for("project_detail", project_id=project_id))
+        return redirect(url_for("approval_detail", project_id=project_id, approval_type=fallback_approval_type))
 
     if not allowed_import_file(file.filename):
         flash("Unsupported import format. Use CSV or XLSX.", "error")
-        return redirect(url_for("project_detail", project_id=project_id))
+        return redirect(url_for("approval_detail", project_id=project_id, approval_type=fallback_approval_type))
 
     try:
         rows = parse_import_rows(file)
     except Exception:
         flash("The file could not be read. Check the format and try again.", "error")
-        return redirect(url_for("project_detail", project_id=project_id))
-
-    approval_options = selected_project_approval_types(project_id)
+        return redirect(url_for("approval_detail", project_id=project_id, approval_type=fallback_approval_type))
     valid_rows = []
     for row in rows:
         if not row["condition_description"]:
             continue
+        row["approval_type"] = normalize_approval_type(
+            row.get("approval_type") or request.form.get("approval_type", ""), approval_options
+        ) or request.form.get("approval_type", "")
         row["schedule_source"] = sanitize_schedule_source(row.get("schedule_source", ""), approval_options)
         error = validate_compliance_payload(row, approval_options)
         if error is None:
@@ -2016,7 +2587,7 @@ def import_compliance_items(project_id):
 
     if not valid_rows:
         flash("No valid condition rows found in the uploaded file.", "error")
-        return redirect(url_for("project_detail", project_id=project_id))
+        return redirect(url_for("approval_detail", project_id=project_id, approval_type=fallback_approval_type))
 
     db = get_db()
     for row in valid_rows:
@@ -2024,6 +2595,7 @@ def import_compliance_items(project_id):
             """
             INSERT INTO compliance_items (
                 project_id,
+                approval_type,
                 condition_description,
                 action_to_be_taken,
                 due_date,
@@ -2036,10 +2608,11 @@ def import_compliance_items(project_id):
                 remarks,
                 status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 project["id"],
+                row["approval_type"],
                 row["condition_description"],
                 row["action_to_be_taken"],
                 row["due_date"],
@@ -2067,7 +2640,7 @@ def import_compliance_items(project_id):
         f"Imported {len(valid_rows)} compliance items into {project['name']}. Use bulk edit or 'Edit action / due date' to finish scheduling details.",
         "success",
     )
-    return redirect(url_for("project_detail", project_id=project_id))
+    return redirect(url_for("approval_detail", project_id=project_id, approval_type=fallback_approval_type))
 
 
 @app.route("/compliance/<int:item_id>/edit", methods=["GET", "POST"])
@@ -2086,7 +2659,8 @@ def edit_compliance_item(item_id):
             db.execute(
                 """
                 UPDATE compliance_items
-                SET condition_description = ?,
+                SET approval_type = ?,
+                    condition_description = ?,
                     action_to_be_taken = ?,
                     due_date = ?,
                     frequency = ?,
@@ -2100,6 +2674,7 @@ def edit_compliance_item(item_id):
                 WHERE id = ?
                 """,
                 (
+                    payload["approval_type"],
                     payload["condition_description"],
                     payload["action_to_be_taken"],
                     payload["due_date"],
@@ -2126,7 +2701,7 @@ def edit_compliance_item(item_id):
                 )
             db.commit()
             flash("Compliance item updated.", "success")
-            return redirect(url_for("project_detail", project_id=item["project_id"]))
+            return redirect(url_for("approval_detail", project_id=item["project_id"], approval_type=payload["approval_type"]))
 
         flash(error, "error")
 
@@ -2164,7 +2739,7 @@ def delete_compliance_item(item_id):
     db.execute("DELETE FROM compliance_items WHERE id = ?", (item_id,))
     db.commit()
     flash("Compliance item deleted.", "success")
-    return redirect(url_for("project_detail", project_id=item["project_id"]))
+    return redirect(url_for("approval_detail", project_id=item["project_id"], approval_type=item["approval_type"]))
 
 
 @app.post("/compliance/<int:item_id>/status")
@@ -2174,7 +2749,7 @@ def update_compliance_status(item_id):
     new_status = request.form.get("status", "").strip()
     if new_status not in LIFECYCLE_STATUSES:
         flash("Invalid status update.", "error")
-        return redirect(url_for("project_detail", project_id=item["project_id"]))
+        return redirect(url_for("approval_detail", project_id=item["project_id"], approval_type=item["approval_type"]))
 
     db = get_db()
     db.execute("UPDATE compliance_items SET status = ? WHERE id = ?", (new_status, item_id))
@@ -2189,7 +2764,7 @@ def update_compliance_status(item_id):
     )
     db.commit()
     flash("Compliance status updated.", "success")
-    return redirect(url_for("project_detail", project_id=item["project_id"]))
+    return redirect(url_for("approval_detail", project_id=item["project_id"], approval_type=item["approval_type"]))
 
 
 @app.post("/compliance/<int:item_id>/upload")
@@ -2202,11 +2777,11 @@ def upload_document(item_id):
 
     if file is None or not file.filename:
         flash("Choose a file to upload.", "error")
-        return redirect(url_for("project_detail", project_id=item["project_id"]))
+        return redirect(url_for("approval_detail", project_id=item["project_id"], approval_type=item["approval_type"]))
 
     if not allowed_file(file.filename):
         flash("Unsupported file type. Upload a PDF or image.", "error")
-        return redirect(url_for("project_detail", project_id=item["project_id"]))
+        return redirect(url_for("approval_detail", project_id=item["project_id"], approval_type=item["approval_type"]))
 
     original_filename = secure_filename(file.filename)
     unique_name = f"{uuid.uuid4().hex}{Path(original_filename).suffix.lower()}"
@@ -2235,7 +2810,158 @@ def upload_document(item_id):
     )
     db.commit()
     flash("Document uploaded.", "success")
-    return redirect(url_for("project_detail", project_id=item["project_id"]))
+    return redirect(url_for("approval_detail", project_id=item["project_id"], approval_type=item["approval_type"], tab="documents"))
+
+
+@app.post("/compliance/<int:item_id>/occurrences/<occurrence_date>/status")
+@login_required
+def update_occurrence_status(item_id, occurrence_date):
+    item = get_owned_compliance_item(item_id)
+    new_status = request.form.get("status", "Completed").strip()
+    if new_status not in LIFECYCLE_STATUSES:
+        flash("Invalid occurrence status.", "error")
+        return redirect(url_for("approval_detail", project_id=item["project_id"], approval_type=item["approval_type"]))
+
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO compliance_occurrences (compliance_item_id, occurrence_date, status, completed_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(compliance_item_id, occurrence_date)
+        DO UPDATE SET status = excluded.status, completed_at = excluded.completed_at
+        """,
+        (item_id, occurrence_date, new_status, datetime.utcnow().isoformat() if new_status == "Completed" else ""),
+    )
+    record_history(
+        item["project_id"],
+        item_id,
+        "occurrence_status_changed",
+        "Occurrence status",
+        occurrence_date,
+        new_status,
+        item["condition_description"],
+    )
+    db.commit()
+    flash("Occurrence updated.", "success")
+    return redirect(url_for("approval_detail", project_id=item["project_id"], approval_type=item["approval_type"]))
+
+
+@app.post("/projects/<int:project_id>/approvals/<approval_type>/report")
+@login_required
+def save_compliance_report(project_id, approval_type):
+    project, approval = get_owned_project_approval(project_id, approval_type)
+    approval_lookup = build_approval_lookup(fetch_project_approvals(project_id))
+    items = annotate_compliance_items(fetch_project_compliance_items(project_id, approval_type), approval_lookup)
+    periods = build_approval_report_periods(approval)
+    period_lookup = {period["key"]: period for period in periods}
+    existing = fetch_compliance_report_responses(project_id, approval_type)
+    db = get_db()
+
+    for item in items:
+        for period in periods:
+            field_prefix = f"{item['id']}_{period['key']}"
+            response_text = request.form.get(f"response_{field_prefix}", "").strip()
+            file = request.files.get(f"attachment_{field_prefix}")
+            current = existing.get((item["id"], period["label"]), {})
+            attachment_original = current.get("attachment_original_filename", "")
+            attachment_stored = current.get("attachment_stored_filename", "")
+            annexure_number = current.get("annexure_number", 0)
+
+            if file and file.filename:
+                if not allowed_file(file.filename):
+                    flash(f"Unsupported file on {item['condition_description'][:40]} / {period['label']}.", "error")
+                    return redirect(url_for("approval_detail", project_id=project_id, approval_type=approval_type, tab="compliance-report"))
+                original_filename = secure_filename(file.filename)
+                unique_name = f"{uuid.uuid4().hex}{Path(original_filename).suffix.lower()}"
+                file.save(UPLOAD_DIR / unique_name)
+                attachment_original = original_filename
+                attachment_stored = unique_name
+                if not annexure_number:
+                    annexure_number = next_annexure_number(project_id, approval_type)
+            if not response_text and not attachment_stored and not current:
+                continue
+
+            db.execute(
+                """
+                INSERT INTO compliance_report_responses (
+                    project_id, approval_type, compliance_item_id, period_label, period_due_date,
+                    response_text, attachment_original_filename, attachment_stored_filename, annexure_number, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(project_id, approval_type, compliance_item_id, period_label)
+                DO UPDATE SET
+                    response_text = excluded.response_text,
+                    attachment_original_filename = excluded.attachment_original_filename,
+                    attachment_stored_filename = excluded.attachment_stored_filename,
+                    annexure_number = excluded.annexure_number,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    project_id,
+                    approval_type,
+                    item["id"],
+                    period["label"],
+                    period["date"],
+                    response_text,
+                    attachment_original,
+                    attachment_stored,
+                    annexure_number,
+                ),
+            )
+    db.commit()
+    flash(f"{approval_type} compliance report saved.", "success")
+    return redirect(url_for("approval_detail", project_id=project_id, approval_type=approval_type, tab="compliance-report"))
+
+
+@app.get("/projects/<int:project_id>/approvals/<approval_type>/report/export.xlsx")
+@login_required
+def export_compliance_report_excel(project_id, approval_type):
+    project, approval = get_owned_project_approval(project_id, approval_type)
+    periods = build_approval_report_periods(approval)
+    selected_keys = set(request.args.getlist("period"))
+    items = annotate_compliance_items(fetch_project_compliance_items(project_id, approval_type), build_approval_lookup(fetch_project_approvals(project_id)))
+    responses = fetch_compliance_report_responses(project_id, approval_type)
+    workbook = build_report_export_workbook(project, approval, periods, items, responses, selected_keys)
+    buffer = BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    filename = secure_filename(f"{project['name']}-{approval_type}-compliance-report.xlsx")
+    return send_file(buffer, as_attachment=True, download_name=filename, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.get("/projects/<int:project_id>/approvals/<approval_type>/report/export.pdf")
+@login_required
+def export_compliance_report_pdf(project_id, approval_type):
+    project, approval = get_owned_project_approval(project_id, approval_type)
+    periods = build_approval_report_periods(approval)
+    selected_keys = set(request.args.getlist("period"))
+    items = annotate_compliance_items(fetch_project_compliance_items(project_id, approval_type), build_approval_lookup(fetch_project_approvals(project_id)))
+    responses = fetch_compliance_report_responses(project_id, approval_type)
+    buffer = build_report_pdf(project, approval, periods, items, responses, selected_keys)
+    filename = secure_filename(f"{project['name']}-{approval_type}-compliance-report.pdf")
+    return send_file(buffer, as_attachment=True, download_name=filename, mimetype="application/pdf")
+
+
+@app.route("/report-documents/<int:response_id>")
+@login_required
+def view_report_attachment(response_id):
+    response = get_db().execute(
+        """
+        SELECT crr.*, p.user_id
+        FROM compliance_report_responses crr
+        JOIN projects p ON p.id = crr.project_id
+        WHERE crr.id = ? AND p.user_id = ?
+        """,
+        (response_id, g.user["id"]),
+    ).fetchone()
+    if response is None or not response["attachment_stored_filename"]:
+        abort(404)
+    return send_from_directory(
+        app.config["UPLOAD_FOLDER"],
+        response["attachment_stored_filename"],
+        as_attachment=False,
+        download_name=response["attachment_original_filename"],
+    )
 
 
 @app.route("/documents/<int:document_id>")

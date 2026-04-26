@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+
+{% block title %}{{ approval["approval_type"] }} | {{ project["name"] }} | ClearPath{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb">
+  <a href="{{ url_for('dashboard') }}">Dashboard</a>
+  <span>›</span>
+  <a href="{{ url_for('projects') }}">Projects</a>
+  <span>›</span>
+  <a href="{{ url_for('project_detail', project_id=project['id']) }}">{{ project["name"] }}</a>
+  <span>›</span>
+  <span>{{ approval["approval_type"] }}</span>
+</nav>
+
+<section class="screen-head">
+  <div>
+    <h1>{{ approval["approval_type"] }} — {{ project["name"] }}</h1>
+    <p class="subtle-copy">{{ project["location"] }}</p>
+  </div>
+</section>
+
+<section class="stats-row stats-row-compact">
+  <article class="metric-card"><span>Issued</span><strong>{{ approval["issue_date"] or "Not set" }}</strong></article>
+  <article class="metric-card"><span>Expires</span><strong>{{ approval["expiry_date"] or "Not set" }}</strong></article>
+  <article class="metric-card"><span>Validity</span><strong>{{ approval["expiry_state"] }}</strong></article>
+  <article class="metric-card metric-red"><span>Conditions</span><strong>{{ condition_count }}{% if overdue_count %} · {{ overdue_count }} overdue{% elif due_soon_count %} · {{ due_soon_count }} due soon{% endif %}</strong></article>
+</section>
+
+<section class="tab-strip">
+  <a class="{% if active_tab == 'conditions' %}active{% endif %}" href="{{ url_for('approval_detail', project_id=project['id'], approval_type=approval['approval_type'], tab='conditions') }}">Conditions</a>
+  <a class="{% if active_tab == 'compliance-report' %}active{% endif %}" href="{{ url_for('approval_detail', project_id=project['id'], approval_type=approval['approval_type'], tab='compliance-report') }}">Compliance report</a>
+  <a class="{% if active_tab == 'documents' %}active{% endif %}" href="{{ url_for('approval_detail', project_id=project['id'], approval_type=approval['approval_type'], tab='documents') }}">Documents</a>
+  <a class="{% if active_tab == 'activity' %}active{% endif %}" href="{{ url_for('approval_detail', project_id=project['id'], approval_type=approval['approval_type'], tab='activity') }}">Activity</a>
+</section>
+
+{% if active_tab == 'conditions' %}
+<section class="toolbar-row">
+  <div class="filter-group">
+    {% for current_filter in status_filters %}
+    <a class="mini-pill tiny-filter {% if current_filter == status_filter %}selected{% endif %}" href="{{ url_for('approval_detail', project_id=project['id'], approval_type=approval['approval_type'], tab='conditions', status_filter=current_filter) }}">{{ current_filter }}</a>
+    {% endfor %}
+  </div>
+  <div class="toolbar-actions">
+    <a class="secondary-button button-link" href="{{ url_for('export_project_register', project_id=project['id']) }}">Export</a>
+    <a class="secondary-button button-link" href="{{ url_for('bulk_edit_project', project_id=project['id']) }}">Bulk edit</a>
+  </div>
+</section>
+
+<section class="compliance-card-list">
+  {% for item in approval_items %}
+  <article class="condition-card state-{{ item['derived_status']|lower|replace(' ', '-') }}">
+    <div class="condition-card-main">
+      <span class="condition-label">Condition {{ loop.index }}{% if item["is_recurring"] %} · {{ item["frequency"] }}{% endif %}</span>
+      <p class="condition-text">{{ item["condition_description"] }}</p>
+      <div class="condition-action-block">
+        <span class="condition-subhead">Action to be taken <a href="{{ url_for('edit_compliance_item', item_id=item['id']) }}">Edit</a></span>
+        <p>{{ item["action_to_be_taken"] or "No action specified yet." }}</p>
+      </div>
+
+      {% if item["occurrences"] %}
+      <div class="occurrence-strip">
+        {% for occurrence in item["occurrences"] %}
+        <div class="occurrence-chip state-{{ occurrence['derived_status']|lower|replace(' ', '-') }}">
+          <strong>{{ occurrence["label"] }}</strong>
+          <span>Due {{ occurrence["date"] }}</span>
+          <small>{{ occurrence["derived_status"] if occurrence["status"] != 'Completed' else 'Completed' }}</small>
+          {% if occurrence["status"] != "Completed" %}
+          <form method="post" action="{{ url_for('update_occurrence_status', item_id=item['id'], occurrence_date=occurrence['date']) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+            <input type="hidden" name="status" value="Completed" />
+            <button type="submit" class="text-action">Mark done</button>
+          </form>
+          {% else %}
+          <span class="text-action text-static">Done</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="condition-side-stack">
+      <div class="meta-box">
+        <span>Due date <a href="{{ url_for('edit_compliance_item', item_id=item['id']) }}">Edit</a></span>
+        <strong class="date-state-{{ item['derived_status']|lower|replace(' ', '-') }}">{{ item["display_due_date"] or "—" }}</strong>
+      </div>
+      <div class="meta-box">
+        <span>Frequency</span>
+        <strong>{{ item["schedule_label"] }}</strong>
+      </div>
+      <div class="meta-box">
+        <span>{% if item["is_recurring"] %}Overall status{% else %}Status{% endif %}</span>
+        <strong><span class="mini-pill status-pill state-{{ item['derived_status']|lower|replace(' ', '-') }}">{{ item["status_summary_label"] }}</span></strong>
+      </div>
+    </div>
+  </article>
+  {% else %}
+  <div class="empty-state">
+    <h3>No conditions yet for {{ approval["approval_type"] }}</h3>
+    <p>Add or import approval-specific conditions below.</p>
+  </div>
+  {% endfor %}
+</section>
+
+<section class="split-workspace">
+  <article class="flat-panel">
+    <div class="section-heading-row">
+      <div>
+        <h2>Add condition</h2>
+        <p class="subtle-copy">This condition will be stored under {{ approval["approval_type"] }}.</p>
+      </div>
+    </div>
+    <form method="post" action="{{ url_for('add_compliance_item', project_id=project['id']) }}" class="stack-form schedule-form" data-schedule-preview data-approvals='{{ approval_context|tojson }}'>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <input type="hidden" name="approval_type" value="{{ approval['approval_type'] }}" />
+      <label><span>Condition description</span><textarea name="condition_description" rows="4" required></textarea></label>
+      <label><span>Action to be taken</span><textarea name="action_to_be_taken" rows="3"></textarea></label>
+      <div class="three-column-form">
+        <label>
+          <span>Frequency</span>
+          <select name="frequency" data-frequency-input>
+            <option value="General">General</option>
+            <option value="One-time">One-time</option>
+            <option value="Monthly">Monthly</option>
+            <option value="Quarterly">Quarterly</option>
+            <option value="Half-yearly">Half-yearly</option>
+            <option value="Yearly">Yearly</option>
+          </select>
+        </label>
+        <label><span>Custom due date</span><input type="date" name="due_date" data-due-date-input /></label>
+        <label>
+          <span>Schedule from</span>
+          <select name="schedule_source" data-schedule-source-input>
+            <option value="">Custom date</option>
+            {% for option in approval_options %}
+            <option value="{{ option }}">{{ option }} grant date</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <p class="subtle-copy" data-schedule-preview-text>{{ schedule_preview_text }}</p>
+      <button type="submit" class="primary-button">+ Add condition</button>
+    </form>
+  </article>
+
+  <article class="flat-panel">
+    <div class="section-heading-row">
+      <div>
+        <h2>Import conditions</h2>
+        <p class="subtle-copy">Upload EC / CTE / CTO condition sheets directly into this approval.</p>
+      </div>
+    </div>
+    <form method="post" action="{{ url_for('import_compliance_items', project_id=project['id']) }}" enctype="multipart/form-data" class="stack-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <input type="hidden" name="approval_type" value="{{ approval['approval_type'] }}" />
+      <label><span>Import file</span><input type="file" name="import_file" accept=".csv,.xlsx" required /></label>
+      <button type="submit" class="secondary-button">Import conditions</button>
+      <a class="text-link" href="{{ url_for('download_project_import_sample', project_id=project['id']) }}">Download sample template</a>
+    </form>
+  </article>
+</section>
+{% elif active_tab == 'compliance-report' %}
+<section class="flat-panel">
+  <div class="section-heading-row">
+    <div>
+      <h2>{{ approval["approval_type"] }} compliance report</h2>
+      <p class="subtle-copy">Select one or more periods, update responses, attach annexures, then export to PDF or Excel.</p>
+    </div>
+    <div class="toolbar-actions">
+      <form method="get" action="{{ url_for('export_compliance_report_pdf', project_id=project['id'], approval_type=approval['approval_type']) }}" class="inline-form">
+        {% for key in selected_period_keys %}
+        <input type="hidden" name="period" value="{{ key }}" />
+        {% endfor %}
+        <button type="submit" class="secondary-button">Export PDF</button>
+      </form>
+      <form method="get" action="{{ url_for('export_compliance_report_excel', project_id=project['id'], approval_type=approval['approval_type']) }}" class="inline-form">
+        {% for key in selected_period_keys %}
+        <input type="hidden" name="period" value="{{ key }}" />
+        {% endfor %}
+        <button type="submit" class="secondary-button">Export Excel</button>
+      </form>
+    </div>
+  </div>
+  <form method="get" class="period-selector-row">
+    <input type="hidden" name="tab" value="compliance-report" />
+    {% for period in periods %}
+    <label class="mini-check">
+      <input type="checkbox" name="period" value="{{ period['key'] }}" {% if not selected_period_keys or period['key'] in selected_period_keys %}checked{% endif %} />
+      <span>{{ period["label"] }}</span>
+    </label>
+    {% endfor %}
+    <button type="submit" class="secondary-button">Apply columns</button>
+  </form>
+
+  <form method="post" action="{{ url_for('save_compliance_report', project_id=project['id'], approval_type=approval['approval_type']) }}" enctype="multipart/form-data" class="stack-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+    <div class="table-wrap report-grid-wrap">
+      <table class="report-grid">
+        <thead>
+          <tr>
+            <th>EC condition</th>
+            {% for period in visible_periods %}
+            <th>{{ period["label"] }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in all_approval_items %}
+          <tr>
+            <td class="report-condition-col">{{ item["condition_description"] }}</td>
+            {% for period in visible_periods %}
+            {% set response = responses.get((item['id'], period['label']), {}) %}
+            <td>
+              <textarea name="response_{{ item['id'] }}_{{ period['key'] }}" rows="4" placeholder="Response for {{ period['label'] }}">{{ response.get('response_text', '') }}</textarea>
+              <input type="file" name="attachment_{{ item['id'] }}_{{ period['key'] }}" accept=".pdf,.png,.jpg,.jpeg,.webp" />
+              {% if response.get("annexure_number") %}
+              <a class="text-link" href="{{ url_for('view_report_attachment', response_id=response['id']) }}" target="_blank" rel="noopener noreferrer">Annexure no. {{ response["annexure_number"] }}</a>
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button type="submit" class="primary-button">Save report responses</button>
+  </form>
+</section>
+{% elif active_tab == 'documents' %}
+<section class="stack-section">
+  {% for document in documents %}
+  <a class="project-row-card" href="{{ url_for('view_document', document_id=document['id']) }}" target="_blank" rel="noopener noreferrer">
+    <div>
+      <strong>{{ document["document_title"] or document["original_filename"] }}</strong>
+      <p>Action to be taken · {{ document["condition_description"] }}</p>
+    </div>
+    <div class="row-pill-set">
+      <span class="mini-pill pill-{{ approval['approval_type']|lower }}">{{ approval["approval_type"] }}</span>
+      <span class="mini-pill">{{ document["uploaded_at"][:10] }}</span>
+    </div>
+  </a>
+  {% endfor %}
+  {% for document in report_documents %}
+  <a class="project-row-card" href="{{ url_for('view_report_attachment', response_id=document['id']) }}" target="_blank" rel="noopener noreferrer">
+    <div>
+      <strong>{{ document["document_title"] }}</strong>
+      <p>Compliance report · {{ document["condition_description"] }}</p>
+    </div>
+    <div class="row-pill-set">
+      <span class="mini-pill pill-clear">Annexure {{ document["annexure_number"] }}</span>
+      <span class="mini-pill">{{ document["updated_at"][:10] }}</span>
+    </div>
+  </a>
+  {% endfor %}
+  {% if not documents and not report_documents %}
+  <div class="empty-state">
+    <h3>No documents yet</h3>
+    <p>Action uploads and report annexures for {{ approval["approval_type"] }} will appear here.</p>
+  </div>
+  {% endif %}
+</section>
+{% else %}
+<section class="activity-list timeline-list">
+  {% for entry in activity %}
+  <article class="activity-row state-card">
+    <strong>{{ entry["change_type"]|replace('_', ' ')|title }}</strong>
+    <span>{{ entry["item_snapshot"] or "Compliance item" }}</span>
+    <small>{{ entry["changed_at"] }}</small>
+  </article>
+  {% else %}
+  <div class="empty-state">
+    <h3>No activity yet</h3>
+    <p>Imports, edits, due date changes, and uploads for this approval will appear here.</p>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+{% endblock %}
