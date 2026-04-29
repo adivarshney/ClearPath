@@ -21,7 +21,7 @@
 </section>
 
 <section class="flat-panel">
-  <form method="post" class="stack-form schedule-form" data-schedule-preview data-approvals='{{ approval_context|tojson }}'>
+  <form method="post" class="stack-form schedule-form" data-schedule-preview data-approvals='{{ approval_context|tojson }}' data-recurring-status-form>
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
     <label>
       <span>NOC / approval</span>
@@ -37,7 +37,7 @@
     <div class="three-column-form">
       <label>
         <span>Frequency</span>
-        <select name="frequency" data-frequency-input>
+        <select name="frequency" data-frequency-input data-recurring-frequency-input>
           {% for frequency in frequency_types %}
           <option value="{{ frequency }}" {% if item["frequency"] == frequency %}selected{% endif %}>{{ frequency }}</option>
           {% endfor %}
@@ -56,7 +56,7 @@
     </div>
 
     <div class="three-column-form">
-      <label>
+      <label data-recurring-status-block>
         <span>Status</span>
         <select name="status">
           {% for status in lifecycle_statuses %}
@@ -80,6 +80,10 @@
       <label><span>Acknowledgment number</span><input type="text" name="acknowledgment_number" value="{{ item['acknowledgment_number'] }}" /></label>
       <label><span>Remarks</span><input type="text" name="remarks" value="{{ item['remarks'] }}" /></label>
     </div>
+
+    <p class="subtle-copy" data-recurring-status-note hidden>
+      Recurring conditions are tracked per occurrence. Use the condition page to mark each month / quarter independently.
+    </p>
 
     <p class="subtle-copy" data-schedule-preview-text>{{ schedule_preview_text }}</p>
 

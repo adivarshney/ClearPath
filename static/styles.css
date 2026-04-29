@@ -1184,7 +1184,7 @@ td {
 .report-grid {
   width: 100%;
   border-collapse: collapse;
-  min-width: 980px;
+  min-width: 1320px;
 }
 
 .report-grid th,
@@ -1199,7 +1199,28 @@ td {
 }
 
 .report-condition-col {
-  min-width: 260px;
+  min-width: 360px;
+  width: 360px;
+}
+
+.report-response-cell {
+  min-width: 240px;
+}
+
+.report-response-cell textarea {
+  min-width: 220px;
+  min-height: 132px;
+  white-space: pre-wrap;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+.report-response-cell input[type="file"] {
+  margin-top: 10px;
+}
+
+.compact-empty {
+  margin-bottom: 10px;
 }
 
 .portfolio-meta-grid {

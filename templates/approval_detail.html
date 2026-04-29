@@ -186,13 +186,19 @@
     <input type="hidden" name="tab" value="compliance-report" />
     {% for period in periods %}
     <label class="mini-check">
-      <input type="checkbox" name="period" value="{{ period['key'] }}" {% if not selected_period_keys or period['key'] in selected_period_keys %}checked{% endif %} />
+      <input type="checkbox" name="period" value="{{ period['key'] }}" {% if period['key'] in selected_period_keys %}checked{% endif %} />
       <span>{{ period["label"] }}</span>
     </label>
     {% endfor %}
     <button type="submit" class="secondary-button">Apply columns</button>
   </form>
 
+  {% if not visible_periods %}
+  <div class="empty-state compact-empty">
+    <h3>Select report sessions</h3>
+    <p>Choose the periods you want to work on. Leaving them unselected keeps the grid compact by default.</p>
+  </div>
+  {% else %}
   <form method="post" action="{{ url_for('save_compliance_report', project_id=project['id'], approval_type=approval['approval_type']) }}" enctype="multipart/form-data" class="stack-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
     <div class="table-wrap report-grid-wrap">
@@ -211,11 +217,11 @@
             <td class="report-condition-col">{{ item["condition_description"] }}</td>
             {% for period in visible_periods %}
             {% set response = responses.get((item['id'], period['label']), {}) %}
-            <td>
-              <textarea name="response_{{ item['id'] }}_{{ period['key'] }}" rows="4" placeholder="Response for {{ period['label'] }}">{{ response.get('response_text', '') }}</textarea>
+            <td class="report-response-cell">
+              <textarea name="response_{{ item['id'] }}_{{ period['key'] }}" rows="5" placeholder="Add response for {{ period['label'] }}">{{ response.get('response_text', '') }}</textarea>
               <input type="file" name="attachment_{{ item['id'] }}_{{ period['key'] }}" accept=".pdf,.png,.jpg,.jpeg,.webp" />
-              {% if response.get("annexure_number") %}
-              <a class="text-link" href="{{ url_for('view_report_attachment', response_id=response['id']) }}" target="_blank" rel="noopener noreferrer">Annexure no. {{ response["annexure_number"] }}</a>
+              {% if response.get("annexure_label") %}
+              <a class="text-link" href="{{ url_for('view_report_attachment', response_id=response['id']) }}" target="_blank" rel="noopener noreferrer">{{ response["annexure_label"] }}</a>
               {% endif %}
             </td>
             {% endfor %}
@@ -226,6 +232,7 @@
     </div>
     <button type="submit" class="primary-button">Save report responses</button>
   </form>
+  {% endif %}
 </section>
 {% elif active_tab == 'documents' %}
 <section class="stack-section">
@@ -248,7 +255,7 @@
       <p>Compliance report · {{ document["condition_description"] }}</p>
     </div>
     <div class="row-pill-set">
-      <span class="mini-pill pill-clear">Annexure {{ document["annexure_number"] }}</span>
+      <span class="mini-pill pill-clear">{{ document["annexure_label"] }}</span>
       <span class="mini-pill">{{ document["updated_at"][:10] }}</span>
     </div>
   </a>

@@ -168,6 +168,30 @@
         checkbox.addEventListener("change", syncState);
         syncState();
       });
+
+      document.querySelectorAll("[data-recurring-status-form]").forEach((form) => {
+        const frequencyField = form.querySelector("[data-recurring-frequency-input]");
+        const statusBlock = form.querySelector("[data-recurring-status-block]");
+        const statusNote = form.querySelector("[data-recurring-status-note]");
+        const statusSelect = statusBlock ? statusBlock.querySelector("select") : null;
+        const recurringValues = new Set(["Monthly", "Quarterly", "Half-yearly", "Yearly"]);
+
+        const syncRecurringStatus = () => {
+          if (!frequencyField || !statusBlock || !statusSelect) return;
+          const recurring = recurringValues.has(frequencyField.value);
+          statusBlock.hidden = recurring;
+          if (statusNote) statusNote.hidden = !recurring;
+          if (recurring && statusSelect.value === "Completed") {
+            statusSelect.value = "Pending";
+          }
+        };
+
+        if (frequencyField) {
+          frequencyField.addEventListener("change", syncRecurringStatus);
+          frequencyField.addEventListener("input", syncRecurringStatus);
+        }
+        syncRecurringStatus();
+      });
     </script>
   </body>
 </html>

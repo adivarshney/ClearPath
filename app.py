@@ -609,6 +609,10 @@ def recurrence_interval_months(frequency):
     }.get(frequency, 0)
 
 
+def is_recurring_frequency(frequency):
+    return frequency in {"Monthly", "Quarterly", "Half-yearly", "Yearly"}
+
+
 def looks_like_section_header(text):
     cleaned = clean_text(text)
     if not cleaned:
@@ -1428,7 +1432,10 @@ def fetch_user_documents(user_id):
         ).fetchall()
     ]
     for document in report_documents:
-        document["document_title"] = f"Annexure {document['annexure_number']} · {document['period_label']}"
+        document["annexure_label"] = format_annexure_label(
+            document["annexure_number"], document.get("period_due_date", ""), document["period_label"]
+        )
+        document["document_title"] = f"{document['annexure_label']} · {document['period_label']}"
         document["source"] = "Compliance report"
 
     return sorted(action_documents + report_documents, key=lambda row: row["uploaded_at"], reverse=True)
@@ -1671,6 +1678,39 @@ def build_approval_report_periods(approval):
     return periods
 
 
+def annexure_session_code(period_due_date="", period_label=""):
+    session_date = parse_iso_date(period_due_date)
+    if session_date is None and period_label:
+        try:
+            session_date = datetime.strptime(period_label, "%b %Y").date()
+        except ValueError:
+            session_date = None
+    if session_date is None:
+        return "ANN"
+
+    month_code_map = {
+        1: "JA",
+        2: "F",
+        3: "M",
+        4: "A",
+        5: "MY",
+        6: "J",
+        7: "JL",
+        8: "AU",
+        9: "S",
+        10: "O",
+        11: "N",
+        12: "D",
+    }
+    return f"{month_code_map.get(session_date.month, 'ANN')}{str(session_date.year)[-2:]}"
+
+
+def format_annexure_label(annexure_number, period_due_date="", period_label=""):
+    if not annexure_number:
+        return ""
+    return f"{annexure_session_code(period_due_date, period_label)}_Annex {annexure_number}"
+
+
 def fetch_compliance_report_responses(project_id, approval_type):
     rows = get_db().execute(
         """
@@ -1681,20 +1721,24 @@ def fetch_compliance_report_responses(project_id, approval_type):
         """,
         (project_id, approval_type),
     ).fetchall()
-    return {
-        (row["compliance_item_id"], row["period_label"]): dict(row)
-        for row in rows
-    }
+    response_map = {}
+    for row in rows:
+        response = dict(row)
+        response["annexure_label"] = format_annexure_label(
+            response["annexure_number"], response.get("period_due_date", ""), response["period_label"]
+        )
+        response_map[(row["compliance_item_id"], row["period_label"])] = response
+    return response_map
 
 
-def next_annexure_number(project_id, approval_type):
+def next_annexure_number(project_id, approval_type, period_label):
     row = get_db().execute(
         """
         SELECT COALESCE(MAX(annexure_number), 0) AS value
         FROM compliance_report_responses
-        WHERE project_id = ? AND approval_type = ?
+        WHERE project_id = ? AND approval_type = ? AND period_label = ?
         """,
-        (project_id, approval_type),
+        (project_id, approval_type, period_label),
     ).fetchone()
     return (row["value"] if row else 0) + 1
 
@@ -1718,7 +1762,10 @@ def build_approval_documents(project_id, approval_type):
     for row in report_rows:
         document = dict(row)
         document["source"] = "Compliance report"
-        document["document_title"] = f"Annexure {row['annexure_number']} · {row['period_label']}"
+        document["annexure_label"] = format_annexure_label(
+            row["annexure_number"], row.get("period_due_date", ""), row["period_label"]
+        )
+        document["document_title"] = f"{document['annexure_label']} · {row['period_label']}"
         document["original_filename"] = row["attachment_original_filename"]
         report_documents.append(document)
     return action_documents, report_documents
@@ -1732,7 +1779,7 @@ def build_report_export_workbook(project, approval, periods, items, responses, s
     sheet.append([project["name"], project["location"]])
     sheet.append([])
 
-    selected_periods = [period for period in periods if not selected_keys or period["key"] in selected_keys]
+    selected_periods = [period for period in periods if period["key"] in selected_keys]
     header = ["Condition"] + [period["label"] for period in selected_periods]
     sheet.append(header)
     for item in items:
@@ -1740,8 +1787,8 @@ def build_report_export_workbook(project, approval, periods, items, responses, s
         for period in selected_periods:
             response = responses.get((item["id"], period["label"]), {})
             text_value = response.get("response_text", "")
-            if response.get("annexure_number"):
-                text_value = f"{text_value}\nAnnexure {response['annexure_number']}".strip()
+            if response.get("annexure_label"):
+                text_value = f"{text_value}\n{response['annexure_label']}".strip()
             row.append(text_value)
         sheet.append(row)
     return workbook
@@ -1757,15 +1804,15 @@ def build_report_pdf(project, approval, periods, items, responses, selected_keys
         Spacer(1, 12),
     ]
 
-    selected_periods = [period for period in periods if not selected_keys or period["key"] in selected_keys]
+    selected_periods = [period for period in periods if period["key"] in selected_keys]
     table_data = [["Condition", *[period["label"] for period in selected_periods]]]
     for item in items:
         row = [Paragraph(item["condition_description"], styles["BodyText"])]
         for period in selected_periods:
             response = responses.get((item["id"], period["label"]), {})
             text_value = response.get("response_text", "") or "-"
-            if response.get("annexure_number"):
-                text_value = f"{text_value}<br/>Annexure {response['annexure_number']}"
+            if response.get("annexure_label"):
+                text_value = f"{text_value}<br/>{response['annexure_label']}"
             row.append(Paragraph(text_value, styles["BodyText"]))
         table_data.append(row)
 
@@ -1842,6 +1889,8 @@ def validate_compliance_payload(payload, approval_options):
         return "Invalid schedule source."
     if payload["status"] not in LIFECYCLE_STATUSES:
         return "Invalid status."
+    if is_recurring_frequency(payload["frequency"]) and payload["status"] == "Completed":
+        return "Recurring conditions are completed per occurrence, not as one final item."
     if payload["submission_mode"] and payload["submission_mode"] not in SUBMISSION_MODE_OPTIONS:
         return "Invalid submission mode."
     return None
@@ -2333,7 +2382,7 @@ def approval_detail(project_id, approval_type):
     filtered_items = filter_compliance_items(approval_items, status_filter, "All")
     periods = build_approval_report_periods(approval)
     selected_period_keys = set(request.args.getlist("period"))
-    visible_periods = [period for period in periods if not selected_period_keys or period["key"] in selected_period_keys]
+    visible_periods = [period for period in periods if period["key"] in selected_period_keys]
     responses = fetch_compliance_report_responses(project_id, approval_type)
     action_documents, report_documents = build_approval_documents(project_id, approval_type)
     condition_count = len(approval_items)
@@ -2750,6 +2799,9 @@ def update_compliance_status(item_id):
     if new_status not in LIFECYCLE_STATUSES:
         flash("Invalid status update.", "error")
         return redirect(url_for("approval_detail", project_id=item["project_id"], approval_type=item["approval_type"]))
+    if is_recurring_frequency(item["frequency"]) and new_status == "Completed":
+        flash("Recurring conditions should be completed on each occurrence instead of closing the full condition.", "error")
+        return redirect(url_for("approval_detail", project_id=item["project_id"], approval_type=item["approval_type"]))
 
     db = get_db()
     db.execute("UPDATE compliance_items SET status = ? WHERE id = ?", (new_status, item_id))
@@ -2877,7 +2929,7 @@ def save_compliance_report(project_id, approval_type):
                 attachment_original = original_filename
                 attachment_stored = unique_name
                 if not annexure_number:
-                    annexure_number = next_annexure_number(project_id, approval_type)
+                    annexure_number = next_annexure_number(project_id, approval_type, period["label"])
             if not response_text and not attachment_stored and not current:
                 continue
 
