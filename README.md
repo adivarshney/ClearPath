@@ -13,8 +13,8 @@ Instead of tracking conditions across scattered Excel files, folders, and remind
 
 ## Current Release
 
-Current branch release state: `v2.1.0`  
-Latest commit documented here includes approval workspaces, recurring occurrences, and compliance report exports.
+Current branch release state: `v2.2.0`  
+Latest commit documented here includes the EC extraction preview workflow, extraction polish, and bulk-edit usability improvements.
 
 ## Core Product Flow
 
@@ -162,6 +162,24 @@ Latest commit documented here includes approval workspaces, recurring occurrence
 - Supports import column aliases for approval type, condition, action, due date, status, frequency, schedule source, and metadata
 - Download sample import CSV
 - Bulk edit imported conditions in one screen
+- Bulk edit layout now keeps long condition text readable and action fields usable on desktop widths
+
+### EC Letter Extraction
+
+- EC-only PDF upload from the EC approval workspace
+- Digital PDF text extraction using `pypdf`
+- Review-before-import extraction flow
+- Extracted metadata preview for:
+  - EC reference number
+  - issue date
+  - validity text
+  - proponent name
+  - location text
+- Editable extracted condition list before save
+- Per-row select / deselect before import
+- Imported conditions are tagged with extraction source and batch linkage for traceability
+- Report-style PDF detection in preview
+- Heuristic cleanup to keep leading directive condition text and trim common compliance-response wording
 
 ### Compliance Reports
 
@@ -261,6 +279,20 @@ python3 app.py
 
 ## Release History
 
+### v2.2.0
+
+EC extraction onboarding and workflow polish.
+
+- EC letter PDF upload from the EC workspace
+- draft extraction batches with preview-before-import
+- editable extracted metadata and condition rows
+- per-row include / exclude before import
+- imported conditions linked back to extraction batches
+- report-style extraction cleanup to reduce response-text leakage
+- extraction preview summary cards and warning state for report-like PDFs
+- bulk edit screen layout cleanup for long conditions and action text
+- local testing hardening for the EC extraction flow
+
 ### v2.1.0
 
 Approval workspaces and reporting flow.
@@ -307,9 +339,9 @@ Initial MVP.
 
 ## Upcoming / Next Release Candidates
 
-- EC letter PDF extraction with review-before-import
 - duplicate EC detection using reference number + issue date
 - OCR support for scanned approval letters
+- CTE / CTO extraction after EC matures further
 - configurable approval master data instead of only hardcoded defaults
 - stronger reports page with portfolio exports
 - reminders beyond in-app notifications
