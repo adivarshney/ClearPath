@@ -148,9 +148,18 @@
     <div class="section-heading-row">
       <div>
         <h2>Import conditions</h2>
-        <p class="subtle-copy">Upload EC / CTE / CTO condition sheets directly into this approval.</p>
+        <p class="subtle-copy">Upload spreadsheets directly into this approval{% if approval['approval_type'] == 'EC' %}, or extract candidate conditions from an EC PDF{% endif %}.</p>
       </div>
     </div>
+    {% if approval["approval_type"] == "EC" %}
+    <form method="post" action="{{ url_for('upload_ec_letter', project_id=project['id']) }}" enctype="multipart/form-data" class="stack-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <label><span>EC letter PDF</span><input type="file" name="ec_letter" accept=".pdf" required /></label>
+      <button type="submit" class="secondary-button">Upload EC letter</button>
+      <p class="subtle-copy">Digital PDFs only for now. You’ll review and edit extracted conditions before import.</p>
+    </form>
+    <div class="divider-line"></div>
+    {% endif %}
     <form method="post" action="{{ url_for('import_compliance_items', project_id=project['id']) }}" enctype="multipart/form-data" class="stack-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       <input type="hidden" name="approval_type" value="{{ approval['approval_type'] }}" />

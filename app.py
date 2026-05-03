@@ -1,6 +1,7 @@
 import calendar
 import csv
 import os
+import re
 import sqlite3
 import uuid
 from datetime import date, datetime, timedelta
@@ -26,6 +27,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFError, CSRFProtect, generate_csrf
 from openpyxl import Workbook, load_workbook
+from pypdf import PdfReader
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet
@@ -38,6 +40,7 @@ BASE_DIR = Path(__file__).resolve().parent
 INSTANCE_DIR = BASE_DIR / "instance"
 DATABASE_PATH = INSTANCE_DIR / "clearpath.db"
 UPLOAD_DIR = INSTANCE_DIR / "uploads"
+EXTRACTION_UPLOAD_DIR = UPLOAD_DIR / "ec_extractions"
 DEFAULT_APPROVAL_TYPES = [
     "EC",
     "CTE",
@@ -100,6 +103,7 @@ SCHEMA_WHITELIST = {
 }
 APPROVAL_PORTFOLIO_TYPES = {"EC", "CTE", "CTO"}
 REPORT_TABS = {"conditions", "compliance-report", "documents", "activity"}
+SOURCE_TYPES = {"manual", "import", "ec_extraction"}
 
 
 secret_key = os.environ.get("SECRET_KEY")
@@ -175,6 +179,8 @@ def compliance_table_needs_rebuild(db):
         "responsible_person",
         "acknowledgment_number",
         "remarks",
+        "source_type",
+        "source_batch_id",
     }
     if not required_columns.issubset(existing_columns):
         return True
@@ -197,6 +203,8 @@ def migrate_compliance_items_table(db):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id INTEGER NOT NULL,
             approval_type TEXT NOT NULL DEFAULT '',
+            source_type TEXT NOT NULL DEFAULT 'manual',
+            source_batch_id INTEGER,
             condition_description TEXT NOT NULL,
             action_to_be_taken TEXT NOT NULL DEFAULT '',
             due_date TEXT NOT NULL DEFAULT '',
@@ -225,6 +233,8 @@ def migrate_compliance_items_table(db):
             id,
             project_id,
             approval_type,
+            source_type,
+            source_batch_id,
             condition_description,
             action_to_be_taken,
             due_date,
@@ -242,6 +252,8 @@ def migrate_compliance_items_table(db):
             id,
             project_id,
             {select_expr('approval_type')},
+            {select_expr('source_type', "'manual'")},
+            {select_expr('source_batch_id', 'NULL')},
             condition_description,
             {select_expr('action_to_be_taken')},
             {select_expr('due_date')},
@@ -324,9 +336,47 @@ def create_compliance_report_tables(db):
     )
 
 
+def create_ec_extraction_tables(db):
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ec_extraction_batches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL,
+            approval_type TEXT NOT NULL DEFAULT 'EC',
+            source_filename TEXT NOT NULL DEFAULT '',
+            stored_filename TEXT NOT NULL DEFAULT '',
+            reference_number TEXT NOT NULL DEFAULT '',
+            issue_date TEXT NOT NULL DEFAULT '',
+            validity_text TEXT NOT NULL DEFAULT '',
+            proponent_name TEXT NOT NULL DEFAULT '',
+            location_text TEXT NOT NULL DEFAULT '',
+            raw_text TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'draft',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            confirmed_at TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+        )
+        """
+    )
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ec_extraction_batch_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id INTEGER NOT NULL,
+            item_order INTEGER NOT NULL DEFAULT 0,
+            condition_description TEXT NOT NULL DEFAULT '',
+            action_to_be_taken TEXT NOT NULL DEFAULT '',
+            is_selected INTEGER NOT NULL DEFAULT 1,
+            FOREIGN KEY (batch_id) REFERENCES ec_extraction_batches(id) ON DELETE CASCADE
+        )
+        """
+    )
+
+
 def init_db():
     INSTANCE_DIR.mkdir(exist_ok=True)
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    EXTRACTION_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(app.config["DATABASE"])
     db.row_factory = sqlite3.Row
     db.executescript(
@@ -364,6 +414,8 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id INTEGER NOT NULL,
             approval_type TEXT NOT NULL DEFAULT '',
+            source_type TEXT NOT NULL DEFAULT 'manual',
+            source_batch_id INTEGER,
             condition_description TEXT NOT NULL,
             action_to_be_taken TEXT NOT NULL DEFAULT '',
             due_date TEXT NOT NULL DEFAULT '',
@@ -397,6 +449,7 @@ def init_db():
     create_history_table(db)
     create_occurrence_table(db)
     create_compliance_report_tables(db)
+    create_ec_extraction_tables(db)
     db.execute(
         """
         UPDATE compliance_items
@@ -475,6 +528,21 @@ def get_owned_project_approval(project_id, approval_type):
     if approval is None:
         abort(404)
     return project, approval
+
+
+def get_owned_ec_extraction_batch(batch_id):
+    batch = get_db().execute(
+        """
+        SELECT b.*, p.user_id, p.name AS project_name
+        FROM ec_extraction_batches b
+        JOIN projects p ON p.id = b.project_id
+        WHERE b.id = ? AND p.user_id = ?
+        """,
+        (batch_id, g.user["id"]),
+    ).fetchone()
+    if batch is None:
+        abort(404)
+    return batch
 
 
 def get_owned_compliance_item(item_id):
@@ -621,6 +689,99 @@ def looks_like_section_header(text):
         1, sum(1 for char in cleaned if char.isalpha())
     )
     return cleaned.startswith(("PART ", "SECTION ", "CHAPTER ")) or cleaned.endswith(":") or uppercase_ratio > 0.75
+
+
+def normalize_pdf_text(text):
+    cleaned = (text or "").replace("\xa0", " ").replace("\uf0b7", " ")
+    cleaned = cleaned.replace("\r", "\n")
+    lines = [" ".join(line.split()) for line in cleaned.splitlines()]
+    return "\n".join(line for line in lines if line.strip())
+
+
+def extract_pdf_text(file_path):
+    reader = PdfReader(str(file_path))
+    return "\n".join((page.extract_text() or "") for page in reader.pages)
+
+
+def parse_issue_date_value(raw_text):
+    if not raw_text:
+        return ""
+    cleaned = raw_text.replace("st", "").replace("nd", "").replace("rd", "").replace("th", "")
+    return normalize_due_date(cleaned)
+
+
+def extract_ec_metadata(raw_text):
+    metadata = {
+        "reference_number": "",
+        "issue_date": "",
+        "validity_text": "",
+        "proponent_name": "",
+        "location_text": "",
+    }
+    text = raw_text
+    patterns = {
+        "reference_number": [
+            r"EC\s+letter\s+no\.?\s*[:\-]\s*(.+?)(?:;|\n|Date\s*:)",
+            r"reference\s+no\.?\s*[:\-]\s*(.+?)(?:\n|Date\s*:)",
+        ],
+        "issue_date": [
+            r"Date\s*[:\-]\s*([^\n;]+)",
+            r"issue\s+date\s*[:\-]\s*([^\n;]+)",
+        ],
+        "validity_text": [
+            r"(?:validity|valid up to|shall be valid[^.\n]*)\s*[:\-]?\s*([^\n]+)",
+        ],
+        "proponent_name": [
+            r"Project\s+Proponent\s*[:\-]?\s*([^\n]+)",
+            r"Proponent\s+Name\s*[:\-]?\s*([^\n]+)",
+        ],
+        "location_text": [
+            r"Project\s+Address\s*[:\-]?\s*([^\n]+(?:\n[^\n]+)?)",
+            r"Location\s*[:\-]?\s*([^\n]+)",
+        ],
+    }
+    for key, regex_list in patterns.items():
+        for pattern in regex_list:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                metadata[key] = clean_text(match.group(1))
+                break
+    metadata["issue_date"] = parse_issue_date_value(metadata["issue_date"])
+    return metadata
+
+
+def extract_condition_candidates(raw_text):
+    text = normalize_pdf_text(raw_text)
+    condition_blocks = []
+    for match in re.finditer(r"(?m)(?:^|\n)\s*(\d{1,3})\.\s+(.+?)(?=(?:\n\s*\d{1,3}\.\s)|\Z)", text, flags=re.DOTALL):
+        block = clean_text(match.group(2))
+        if not block:
+            continue
+        block = re.sub(r"\s+", " ", block).strip()
+        if len(block) < 20:
+            continue
+        condition_blocks.append(block)
+
+    if condition_blocks:
+        deduped = []
+        seen = set()
+        for block in condition_blocks:
+            normalized = block.lower()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            deduped.append(block)
+        return deduped
+
+    sentences = [clean_text(part) for part in re.split(r"\n+", text) if clean_text(part)]
+    return [sentence for sentence in sentences if len(sentence) > 40][:40]
+
+
+def build_default_action_from_condition(condition_text):
+    summary = " ".join(condition_text.split()[:18]).strip()
+    if summary:
+        return f"Review this EC condition and define the evidence / submission steps for: {summary}..."
+    return ""
 
 
 def parse_import_matrix(rows):
@@ -1203,6 +1364,18 @@ def fetch_project_history(project_id, limit=12, approval_type=None):
         LIMIT ?
         """,
         params,
+    ).fetchall()
+
+
+def fetch_extraction_batch_items(batch_id):
+    return get_db().execute(
+        """
+        SELECT *
+        FROM ec_extraction_batch_items
+        WHERE batch_id = ?
+        ORDER BY item_order ASC, id ASC
+        """,
+        (batch_id,),
     ).fetchall()
 
 
@@ -1966,6 +2139,26 @@ def approval_context_for_template(approval_rows):
     ]
 
 
+def merge_ec_approval_notes(existing_notes, metadata):
+    parts = []
+    if metadata.get("reference_number"):
+        parts.append(f"Reference: {metadata['reference_number']}")
+    if metadata.get("validity_text"):
+        parts.append(f"Validity: {metadata['validity_text']}")
+    if metadata.get("proponent_name"):
+        parts.append(f"Proponent: {metadata['proponent_name']}")
+    if metadata.get("location_text"):
+        parts.append(f"Location: {metadata['location_text']}")
+    extracted_notes = "\n".join(parts).strip()
+    if not extracted_notes:
+        return existing_notes or ""
+    if not existing_notes:
+        return extracted_notes
+    if extracted_notes in existing_notes:
+        return existing_notes
+    return f"{existing_notes}\n{extracted_notes}".strip()
+
+
 def validate_project_form(name, client_name, location, approval_entries):
     if not name:
         return "Project name is required."
@@ -2429,6 +2622,198 @@ def approval_detail(project_id, approval_type):
     )
 
 
+@app.post("/projects/<int:project_id>/approvals/EC/extraction")
+@login_required
+def upload_ec_letter(project_id):
+    project, approval = get_owned_project_approval(project_id, "EC")
+    file = request.files.get("ec_letter")
+
+    if file is None or not file.filename:
+        flash("Choose an EC PDF to extract conditions from.", "error")
+        return redirect(url_for("approval_detail", project_id=project_id, approval_type="EC"))
+    if Path(file.filename).suffix.lower() != ".pdf":
+        flash("Upload a PDF EC letter for extraction.", "error")
+        return redirect(url_for("approval_detail", project_id=project_id, approval_type="EC"))
+
+    original_filename = secure_filename(file.filename)
+    unique_name = f"{uuid.uuid4().hex}.pdf"
+    save_path = EXTRACTION_UPLOAD_DIR / unique_name
+    file.save(save_path)
+
+    try:
+        raw_text = normalize_pdf_text(extract_pdf_text(save_path))
+    except Exception:
+        flash("The EC PDF could not be read. Try a digital PDF or upload conditions via spreadsheet for now.", "error")
+        return redirect(url_for("approval_detail", project_id=project_id, approval_type="EC"))
+
+    if len(raw_text.strip()) < 40:
+        flash("Not enough readable text was found in this PDF. OCR/scanned PDF support will need a later phase.", "error")
+        return redirect(url_for("approval_detail", project_id=project_id, approval_type="EC"))
+
+    metadata = extract_ec_metadata(raw_text)
+    conditions = extract_condition_candidates(raw_text)
+    if not conditions:
+        flash("The EC PDF text was read, but no conditions could be identified for preview.", "error")
+        return redirect(url_for("approval_detail", project_id=project_id, approval_type="EC"))
+
+    db = get_db()
+    cursor = db.execute(
+        """
+        INSERT INTO ec_extraction_batches (
+            project_id, approval_type, source_filename, stored_filename,
+            reference_number, issue_date, validity_text, proponent_name, location_text, raw_text, status
+        )
+        VALUES (?, 'EC', ?, ?, ?, ?, ?, ?, ?, ?, 'draft')
+        """,
+        (
+            project["id"],
+            original_filename,
+            unique_name,
+            metadata["reference_number"],
+            metadata["issue_date"],
+            metadata["validity_text"],
+            metadata["proponent_name"],
+            metadata["location_text"],
+            raw_text,
+        ),
+    )
+    batch_id = cursor.lastrowid
+    db.executemany(
+        """
+        INSERT INTO ec_extraction_batch_items (batch_id, item_order, condition_description, action_to_be_taken, is_selected)
+        VALUES (?, ?, ?, ?, 1)
+        """,
+        [
+            (batch_id, index + 1, condition, build_default_action_from_condition(condition))
+            for index, condition in enumerate(conditions)
+        ],
+    )
+    db.commit()
+    flash(f"Draft extraction created with {len(conditions)} candidate conditions. Review before import.", "success")
+    return redirect(url_for("review_ec_extraction", batch_id=batch_id))
+
+
+@app.route("/ec-extractions/<int:batch_id>", methods=["GET", "POST"])
+@login_required
+def review_ec_extraction(batch_id):
+    batch = get_owned_ec_extraction_batch(batch_id)
+    if batch["status"] == "discarded":
+        flash("This extraction draft was discarded.", "error")
+        return redirect(url_for("approval_detail", project_id=batch["project_id"], approval_type="EC"))
+
+    if request.method == "POST":
+        action = request.form.get("batch_action", "confirm").strip()
+        items = fetch_extraction_batch_items(batch_id)
+        db = get_db()
+        updated_metadata = {
+            "reference_number": request.form.get("reference_number", "").strip(),
+            "issue_date": request.form.get("issue_date", "").strip(),
+            "validity_text": request.form.get("validity_text", "").strip(),
+            "proponent_name": request.form.get("proponent_name", "").strip(),
+            "location_text": request.form.get("location_text", "").strip(),
+        }
+        db.execute(
+            """
+            UPDATE ec_extraction_batches
+            SET reference_number = ?, issue_date = ?, validity_text = ?, proponent_name = ?, location_text = ?
+            WHERE id = ?
+            """,
+            (
+                updated_metadata["reference_number"],
+                updated_metadata["issue_date"],
+                updated_metadata["validity_text"],
+                updated_metadata["proponent_name"],
+                updated_metadata["location_text"],
+                batch_id,
+            ),
+        )
+
+        selected_rows = []
+        for item in items:
+            condition_description = request.form.get(f"condition_description_{item['id']}", "").strip()
+            action_to_be_taken = request.form.get(f"action_to_be_taken_{item['id']}", "").strip()
+            is_selected = 1 if request.form.get(f"is_selected_{item['id']}") else 0
+            db.execute(
+                """
+                UPDATE ec_extraction_batch_items
+                SET condition_description = ?, action_to_be_taken = ?, is_selected = ?
+                WHERE id = ?
+                """,
+                (condition_description, action_to_be_taken, is_selected, item["id"]),
+            )
+            if is_selected and condition_description:
+                selected_rows.append((condition_description, action_to_be_taken))
+
+        if action == "discard":
+            db.execute("UPDATE ec_extraction_batches SET status = 'discarded' WHERE id = ?", (batch_id,))
+            db.commit()
+            flash("EC extraction draft discarded.", "success")
+            return redirect(url_for("approval_detail", project_id=batch["project_id"], approval_type="EC"))
+
+        if not selected_rows:
+            db.commit()
+            flash("Select at least one extracted condition to import.", "error")
+            return redirect(url_for("review_ec_extraction", batch_id=batch_id))
+
+        approval_row = get_db().execute(
+            """
+            SELECT *
+            FROM project_approvals
+            WHERE project_id = ? AND approval_type = 'EC'
+            """,
+            (batch["project_id"],),
+        ).fetchone()
+        merged_notes = merge_ec_approval_notes(approval_row["approval_notes"] if approval_row else "", updated_metadata)
+        db.execute(
+            """
+            UPDATE project_approvals
+            SET issue_date = CASE WHEN issue_date = '' AND ? != '' THEN ? ELSE issue_date END,
+                approval_notes = ?
+            WHERE project_id = ? AND approval_type = 'EC'
+            """,
+            (updated_metadata["issue_date"], updated_metadata["issue_date"], merged_notes, batch["project_id"]),
+        )
+
+        inserted_count = 0
+        for condition_description, action_to_be_taken in selected_rows:
+            cursor = db.execute(
+                """
+                INSERT INTO compliance_items (
+                    project_id, approval_type, source_type, source_batch_id,
+                    condition_description, action_to_be_taken, due_date, frequency,
+                    schedule_source, submitted_to, submission_mode, responsible_person,
+                    acknowledgment_number, remarks, status
+                )
+                VALUES (?, 'EC', 'ec_extraction', ?, ?, ?, '', 'General', '', '', '', '', '', '', 'Pending')
+                """,
+                (batch["project_id"], batch_id, condition_description, action_to_be_taken),
+            )
+            record_history(
+                batch["project_id"],
+                cursor.lastrowid,
+                "ec_extracted",
+                "EC extraction",
+                "",
+                "Pending",
+                condition_description,
+            )
+            inserted_count += 1
+
+        db.execute(
+            "UPDATE ec_extraction_batches SET status = 'confirmed', confirmed_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (batch_id,),
+        )
+        db.commit()
+        flash(f"Imported {inserted_count} EC conditions from the letter preview.", "success")
+        return redirect(url_for("approval_detail", project_id=batch["project_id"], approval_type="EC"))
+
+    return render_template(
+        "ec_extraction_preview.html",
+        batch=batch,
+        items=fetch_extraction_batch_items(batch_id),
+    )
+
+
 @app.get("/projects/<int:project_id>/import-sample")
 @login_required
 def download_project_import_sample(project_id):
@@ -2564,6 +2949,7 @@ def add_compliance_item(project_id):
             INSERT INTO compliance_items (
                 project_id,
                 approval_type,
+                source_type,
                 condition_description,
                 action_to_be_taken,
                 due_date,
@@ -2576,7 +2962,7 @@ def add_compliance_item(project_id):
                 remarks,
                 status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, 'manual', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 project["id"],
@@ -2658,6 +3044,7 @@ def import_compliance_items(project_id):
             INSERT INTO compliance_items (
                 project_id,
                 approval_type,
+                source_type,
                 condition_description,
                 action_to_be_taken,
                 due_date,
@@ -2670,7 +3057,7 @@ def import_compliance_items(project_id):
                 remarks,
                 status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, 'import', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 project["id"],

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}EC Extraction Preview | ClearPath{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb">
+  <a href="{{ url_for('dashboard') }}">Dashboard</a>
+  <span>›</span>
+  <a href="{{ url_for('projects') }}">Projects</a>
+  <span>›</span>
+  <a href="{{ url_for('project_detail', project_id=batch['project_id']) }}">{{ batch["project_name"] }}</a>
+  <span>›</span>
+  <a href="{{ url_for('approval_detail', project_id=batch['project_id'], approval_type='EC') }}">EC</a>
+  <span>›</span>
+  <span>Extraction preview</span>
+</nav>
+
+<section class="screen-head">
+  <div>
+    <h1>EC extraction preview</h1>
+    <p class="subtle-copy">Review the extracted metadata and conditions before importing them into the EC workspace.</p>
+  </div>
+</section>
+
+<form method="post" class="stack-form">
+  <section class="flat-panel">
+    <div class="section-heading-row">
+      <div>
+        <h2>Source file</h2>
+        <p class="subtle-copy">{{ batch["source_filename"] }}</p>
+      </div>
+    </div>
+    <div class="three-column-form">
+      <label>
+        <span>EC reference number</span>
+        <input type="text" name="reference_number" value="{{ batch['reference_number'] }}" />
+      </label>
+      <label>
+        <span>Issue date</span>
+        <input type="date" name="issue_date" value="{{ batch['issue_date'] }}" />
+      </label>
+      <label>
+        <span>Validity / notes found in PDF</span>
+        <input type="text" name="validity_text" value="{{ batch['validity_text'] }}" />
+      </label>
+      <label>
+        <span>Proponent name</span>
+        <input type="text" name="proponent_name" value="{{ batch['proponent_name'] }}" />
+      </label>
+      <label class="full-span">
+        <span>Location text</span>
+        <input type="text" name="location_text" value="{{ batch['location_text'] }}" />
+      </label>
+    </div>
+  </section>
+
+  <section class="flat-panel">
+    <div class="section-heading-row">
+      <div>
+        <h2>Extracted conditions</h2>
+        <p class="subtle-copy">Deselect any row you do not want to import. You can also clean up wording before confirming.</p>
+      </div>
+    </div>
+
+    <div class="stack-section">
+      {% for item in items %}
+      <article class="extraction-item-card">
+        <label class="checkbox-row">
+          <input type="checkbox" name="is_selected_{{ item['id'] }}" {% if item['is_selected'] %}checked{% endif %} />
+          <span>Import this condition</span>
+        </label>
+        <label>
+          <span>Condition {{ loop.index }}</span>
+          <textarea name="condition_description_{{ item['id'] }}" rows="5" required>{{ item["condition_description"] }}</textarea>
+        </label>
+        <label>
+          <span>Suggested action to be taken</span>
+          <textarea name="action_to_be_taken_{{ item['id'] }}" rows="3">{{ item["action_to_be_taken"] }}</textarea>
+        </label>
+      </article>
+      {% endfor %}
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" name="batch_action" value="discard" class="secondary-button">Discard draft</button>
+      <button type="submit" name="batch_action" value="confirm" class="primary-button">Confirm and import</button>
+    </div>
+  </section>
+</form>
+{% endblock %}

@@ -1236,6 +1236,31 @@ td {
   margin-bottom: 10px;
 }
 
+.divider-line {
+  height: 1px;
+  background: var(--line);
+  margin: 16px 0;
+}
+
+.extraction-item-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+  background: var(--surface-muted);
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.checkbox-row input {
+  width: auto;
+}
+
 .portfolio-meta-grid {
   display: grid;
   gap: 6px;
