@@ -1595,24 +1595,37 @@ def group_items_for_overview(items, kind):
 
 
 def build_cross_project_calendar(user_id, month_offset=0):
-    items = annotate_user_compliance_items(user_id)
+    rows = fetch_user_compliance_rows(user_id)
+    approval_lookup = build_project_approval_lookup(fetch_user_approval_rows(user_id))
     event_map = {}
     today = date.today()
     month_start = add_months(today.replace(day=1), month_offset)
     month_end = add_months(month_start, 1) - timedelta(days=1)
 
-    for item in items:
-        due_date = parse_iso_date(item["display_due_date"])
-        if not due_date or not (month_start <= due_date <= month_end):
-            continue
-        event_map.setdefault(due_date.isoformat(), []).append(
-            {
-                "label": item["project_name"],
-                "meta": item["condition_description"],
-                "kind": item["derived_status"],
-                "href": url_for("approval_detail", project_id=item["project_id"], approval_type=item["approval_type"]),
-            }
-        )
+    for row in rows:
+        item = dict(row)
+        project_approvals = approval_lookup.get(item["project_id"], {})
+        schedule_dates = generate_schedule_dates(item, project_approvals, month_start, month_end)
+        if not schedule_dates:
+            due_date = parse_iso_date(item.get("due_date"))
+            if due_date and month_start <= due_date <= month_end:
+                schedule_dates = [due_date]
+
+        for due_date in schedule_dates:
+            due_iso = due_date.isoformat()
+            event_kind = "Pending"
+            if due_iso < today.isoformat():
+                event_kind = "Overdue"
+            elif due_iso <= (today + timedelta(days=7)).isoformat():
+                event_kind = "Due in 7 days"
+            event_map.setdefault(due_iso, []).append(
+                {
+                    "label": item["project_name"],
+                    "meta": item["condition_description"],
+                    "kind": event_kind,
+                    "href": url_for("approval_detail", project_id=item["project_id"], approval_type=item["approval_type"]),
+                }
+            )
 
     month_matrix = calendar.monthcalendar(month_start.year, month_start.month)
     days = []

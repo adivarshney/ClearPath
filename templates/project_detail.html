@@ -58,25 +58,29 @@
         {% endfor %}
       </div>
     </div>
-    {% set month = calendar_months[0] %}
-    <div class="mini-calendar">
-      <div class="mini-calendar-weekdays">
-        <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
-      </div>
-      <div class="mini-calendar-days">
-        {% for day in month["days"] %}
-        <div class="mini-day {% if not day['day'] %}empty{% endif %} {% if day['is_today'] %}today{% endif %}">
-          {% if day["day"] %}
-          <span>{{ day["day"] }}</span>
-          <div class="mini-dot-stack">
-            {% if day["events"]|selectattr("kind", "equalto", "red")|list %}<i class="dot dot-red"></i>{% endif %}
-            {% if day["events"]|selectattr("kind", "equalto", "amber")|list %}<i class="dot dot-amber"></i>{% endif %}
-            {% if day["events"]|selectattr("kind", "equalto", "green")|list %}<i class="dot dot-green"></i>{% endif %}
-          </div>
-          {% endif %}
+    <div class="mini-calendar-grid">
+      {% for month in calendar_months %}
+      <div class="mini-calendar">
+        <div class="mini-calendar-month-label">{{ month["label"] }}</div>
+        <div class="mini-calendar-weekdays">
+          <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
         </div>
-        {% endfor %}
+        <div class="mini-calendar-days">
+          {% for day in month["days"] %}
+          <div class="mini-day {% if not day['day'] %}empty{% endif %} {% if day['is_today'] %}today{% endif %}">
+            {% if day["day"] %}
+            <span>{{ day["day"] }}</span>
+            <div class="mini-dot-stack">
+              {% if day["events"]|selectattr("kind", "equalto", "red")|list %}<i class="dot dot-red"></i>{% endif %}
+              {% if day["events"]|selectattr("kind", "equalto", "amber")|list %}<i class="dot dot-amber"></i>{% endif %}
+              {% if day["events"]|selectattr("kind", "equalto", "green")|list %}<i class="dot dot-green"></i>{% endif %}
+            </div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
       </div>
+      {% endfor %}
     </div>
     <div class="legend-list">
       <span><i class="dot dot-red"></i>Overdue / expired</span>

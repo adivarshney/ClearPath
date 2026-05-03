@@ -1177,6 +1177,19 @@ td {
   width: auto;
 }
 
+.mini-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.mini-calendar-month-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
 .report-grid-wrap {
   overflow: auto;
 }
@@ -1362,5 +1375,9 @@ td {
 
   .tab-strip {
     overflow-x: auto;
+  }
+
+  .mini-calendar-grid {
+    grid-template-columns: 1fr;
   }
 }
