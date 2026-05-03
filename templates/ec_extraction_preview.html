@@ -23,6 +23,24 @@
 </section>
 
 <form method="post" class="stack-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+  <section class="stats-row stats-row-compact">
+    <article class="metric-card"><span>Source file</span><strong>{{ batch["source_filename"] }}</strong></article>
+    <article class="metric-card"><span>Candidate conditions</span><strong>{{ items|length }}</strong></article>
+    <article class="metric-card"><span>Selected for import</span><strong>{{ selected_count }}</strong></article>
+    <article class="metric-card {% if extraction_mode == 'report_like' %}metric-amber{% endif %}">
+      <span>Extraction mode</span>
+      <strong>{% if extraction_mode == "report_like" %}Report-style cleanup{% else %}Letter-style parsing{% endif %}</strong>
+    </article>
+  </section>
+
+  {% if extraction_mode == "report_like" %}
+  <section class="flat-panel extraction-note">
+    <h2>Report-style PDF detected</h2>
+    <p class="subtle-copy">This PDF looks like a compliance report rather than a source EC letter, so ClearPath kept the leading directive sentences and tried to drop consultant response text. Please review the wording before import.</p>
+  </section>
+  {% endif %}
+
   <section class="flat-panel">
     <div class="section-heading-row">
       <div>
@@ -65,10 +83,13 @@
     <div class="stack-section">
       {% for item in items %}
       <article class="extraction-item-card">
-        <label class="checkbox-row">
-          <input type="checkbox" name="is_selected_{{ item['id'] }}" {% if item['is_selected'] %}checked{% endif %} />
-          <span>Import this condition</span>
-        </label>
+        <div class="extraction-card-top">
+          <label class="checkbox-row">
+            <input type="checkbox" name="is_selected_{{ item['id'] }}" {% if item['is_selected'] %}checked{% endif %} />
+            <span>Import this condition</span>
+          </label>
+          <span class="mini-pill">{{ loop.index }}</span>
+        </div>
         <label>
           <span>Condition {{ loop.index }}</span>
           <textarea name="condition_description_{{ item['id'] }}" rows="5" required>{{ item["condition_description"] }}</textarea>

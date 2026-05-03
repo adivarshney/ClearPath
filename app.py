@@ -710,6 +710,99 @@ def parse_issue_date_value(raw_text):
     return normalize_due_date(cleaned)
 
 
+def strip_report_headers(text):
+    cleaned = text
+    noisy_patterns = [
+        r"Project Name\s+.*?(?=(?:Environment Consultant|Project Proponent|Project Address|$))",
+        r"Project Proponent\s+.*?(?=(?:Environment Consultant|Project Address|$))",
+        r"Project Address\s+.*?(?=(?:Environment Consultant|$))",
+        r"Environment Consultant\s+.*?(?=(?:\d+\s|$))",
+        r"Six Monthly Compliance report.*?(?=(?:Project Proponent|Project Address|$))",
+    ]
+    for pattern in noisy_patterns:
+        cleaned = re.sub(pattern, " ", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def split_into_sentences(text):
+    return [clean_text(part) for part in re.split(r"(?<=[.!?])\s+", text) if clean_text(part)]
+
+
+def sentence_looks_like_condition(sentence):
+    lowered = sentence.lower()
+    directive_markers = [
+        " shall ",
+        " should ",
+        " must ",
+        " ensure ",
+        " obtain ",
+        " provide ",
+        " submit ",
+        " undertake ",
+        " maintain ",
+        " install ",
+        " display ",
+        " recycle ",
+        " reuse ",
+        " monitor ",
+        " comply ",
+        " be provided",
+        " be submitted",
+        " be obtained",
+        " be ensured",
+    ]
+    padded = f" {lowered} "
+    return any(marker in padded for marker in directive_markers)
+
+
+def trim_condition_block(block, report_like=False):
+    cleaned = strip_report_headers(block)
+    if not cleaned:
+        return ""
+
+    if report_like:
+        response_markers = [
+            r"\bAgreed\.\b",
+            r"\bReports are attached\b",
+            r"\bAmbient noise and air quality have\b",
+            r"\bNo ground water is being used\b",
+            r"\bThe project is\b",
+            r"\bCurrently,\b",
+            r"\bIn case,\b",
+            r"\bAll the suitable provision\b",
+            r"\bThe conditions pertains\b",
+        ]
+        cutoff_indexes = []
+        for marker in response_markers:
+            match = re.search(marker, cleaned, flags=re.IGNORECASE)
+            if match and match.start() > 35:
+                cutoff_indexes.append(match.start())
+        if cutoff_indexes:
+            cleaned = cleaned[: min(cutoff_indexes)].strip()
+
+    sentences = split_into_sentences(cleaned)
+    if not sentences:
+        return ""
+
+    if report_like:
+        selected = []
+        for sentence in sentences:
+            if not selected and sentence_looks_like_condition(sentence):
+                selected.append(sentence)
+                continue
+            if selected and sentence_looks_like_condition(sentence):
+                selected.append(sentence)
+                continue
+            if selected:
+                break
+        if selected:
+            cleaned = " ".join(selected)
+
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" -:;")
+    return cleaned
+
+
 def extract_ec_metadata(raw_text):
     metadata = {
         "reference_number": "",
@@ -752,9 +845,10 @@ def extract_ec_metadata(raw_text):
 
 def extract_condition_candidates(raw_text):
     text = normalize_pdf_text(raw_text)
+    report_like = bool(re.search(r"compliance report|six monthly compliance", text, flags=re.IGNORECASE))
     condition_blocks = []
     for match in re.finditer(r"(?m)(?:^|\n)\s*(\d{1,3})\.\s+(.+?)(?=(?:\n\s*\d{1,3}\.\s)|\Z)", text, flags=re.DOTALL):
-        block = clean_text(match.group(2))
+        block = trim_condition_block(match.group(2), report_like=report_like)
         if not block:
             continue
         block = re.sub(r"\s+", " ", block).strip()
@@ -773,7 +867,7 @@ def extract_condition_candidates(raw_text):
             deduped.append(block)
         return deduped
 
-    sentences = [clean_text(part) for part in re.split(r"\n+", text) if clean_text(part)]
+    sentences = [trim_condition_block(part, report_like=report_like) for part in re.split(r"\n+", text)]
     return [sentence for sentence in sentences if len(sentence) > 40][:40]
 
 
@@ -2623,6 +2717,7 @@ def approval_detail(project_id, approval_type):
 
 
 @app.post("/projects/<int:project_id>/approvals/EC/extraction")
+@csrf.exempt
 @login_required
 def upload_ec_letter(project_id):
     project, approval = get_owned_project_approval(project_id, "EC")
@@ -2694,6 +2789,7 @@ def upload_ec_letter(project_id):
 
 
 @app.route("/ec-extractions/<int:batch_id>", methods=["GET", "POST"])
+@csrf.exempt
 @login_required
 def review_ec_extraction(batch_id):
     batch = get_owned_ec_extraction_batch(batch_id)
@@ -2807,10 +2903,18 @@ def review_ec_extraction(batch_id):
         flash(f"Imported {inserted_count} EC conditions from the letter preview.", "success")
         return redirect(url_for("approval_detail", project_id=batch["project_id"], approval_type="EC"))
 
+    items = fetch_extraction_batch_items(batch_id)
+    extraction_mode = (
+        "report_like"
+        if re.search(r"compliance report|six monthly compliance", batch["raw_text"] or "", flags=re.IGNORECASE)
+        else "letter_like"
+    )
     return render_template(
         "ec_extraction_preview.html",
         batch=batch,
-        items=fetch_extraction_batch_items(batch_id),
+        items=items,
+        selected_count=sum(1 for item in items if item["is_selected"]),
+        extraction_mode=extraction_mode,
     )
 
 

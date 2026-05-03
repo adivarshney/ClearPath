@@ -26,6 +26,15 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
     <div class="table-wrap">
       <table class="bulk-edit-table">
+        <colgroup>
+          <col class="bulk-col-condition" />
+          <col class="bulk-col-approval" />
+          <col class="bulk-col-action" />
+          <col class="bulk-col-date" />
+          <col class="bulk-col-frequency" />
+          <col class="bulk-col-schedule" />
+          <col class="bulk-col-status" />
+        </colgroup>
         <thead>
           <tr>
             <th>Condition</th>
@@ -40,24 +49,28 @@
         <tbody>
           {% for item in items %}
           <tr>
-            <td>{{ item["condition_description"] }}</td>
-            <td>
+            <td class="bulk-cell-condition">
+              <div class="bulk-condition-text">{{ item["condition_description"] }}</div>
+            </td>
+            <td class="bulk-cell-select">
               <select name="approval_type_{{ item['id'] }}">
                 {% for option in approval_options %}
                 <option value="{{ option }}" {% if item["approval_type"] == option %}selected{% endif %}>{{ option }}</option>
                 {% endfor %}
               </select>
             </td>
-            <td><textarea name="action_to_be_taken_{{ item['id'] }}" rows="3">{{ item["action_to_be_taken"] }}</textarea></td>
-            <td><input type="date" name="due_date_{{ item['id'] }}" value="{{ item['due_date'] }}" /></td>
-            <td>
+            <td class="bulk-cell-action">
+              <textarea name="action_to_be_taken_{{ item['id'] }}" rows="4" placeholder="Add or refine the action to be taken">{{ item["action_to_be_taken"] }}</textarea>
+            </td>
+            <td class="bulk-cell-date"><input type="date" name="due_date_{{ item['id'] }}" value="{{ item['due_date'] }}" /></td>
+            <td class="bulk-cell-select">
               <select name="frequency_{{ item['id'] }}">
                 {% for frequency in frequency_types %}
                 <option value="{{ frequency }}" {% if item["frequency"] == frequency %}selected{% endif %}>{{ frequency }}</option>
                 {% endfor %}
               </select>
             </td>
-            <td>
+            <td class="bulk-cell-select">
               <select name="schedule_source_{{ item['id'] }}">
                 <option value="">Custom date</option>
                 {% for option in approval_options %}
@@ -65,7 +78,7 @@
                 {% endfor %}
               </select>
             </td>
-            <td>
+            <td class="bulk-cell-select">
               <select name="status_{{ item['id'] }}">
                 {% for status in lifecycle_statuses %}
                 <option value="{{ status }}" {% if item["status"] == status %}selected{% endif %}>{{ status }}</option>

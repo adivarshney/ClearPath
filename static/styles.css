@@ -787,7 +787,81 @@ td {
 }
 
 .bulk-edit-table {
-  min-width: 960px;
+  min-width: 1420px;
+  table-layout: fixed;
+}
+
+.bulk-edit-table th {
+  white-space: nowrap;
+}
+
+.bulk-edit-table th,
+.bulk-edit-table td {
+  padding: 14px 16px;
+}
+
+.bulk-edit-table col.bulk-col-condition {
+  width: 33%;
+}
+
+.bulk-edit-table col.bulk-col-approval {
+  width: 90px;
+}
+
+.bulk-edit-table col.bulk-col-action {
+  width: 28%;
+}
+
+.bulk-edit-table col.bulk-col-date {
+  width: 160px;
+}
+
+.bulk-edit-table col.bulk-col-frequency {
+  width: 150px;
+}
+
+.bulk-edit-table col.bulk-col-schedule {
+  width: 150px;
+}
+
+.bulk-edit-table col.bulk-col-status {
+  width: 130px;
+}
+
+.bulk-condition-text {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: normal;
+  word-break: break-word;
+}
+
+.bulk-edit-table textarea,
+.bulk-edit-table select,
+.bulk-edit-table input[type="date"] {
+  width: 100%;
+  min-width: 0;
+}
+
+.bulk-edit-table textarea {
+  min-height: 112px;
+  resize: vertical;
+  line-height: 1.45;
+  padding: 12px 14px;
+}
+
+.bulk-edit-table select,
+.bulk-edit-table input[type="date"] {
+  min-height: 44px;
+}
+
+.bulk-cell-select,
+.bulk-cell-date {
+  vertical-align: middle;
+}
+
+.bulk-cell-action {
+  min-width: 320px;
 }
 
 .grouped-list-card {
@@ -1251,6 +1325,13 @@ td {
   background: var(--surface-muted);
 }
 
+.extraction-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .checkbox-row {
   display: flex;
   align-items: center;
@@ -1259,6 +1340,10 @@ td {
 
 .checkbox-row input {
   width: auto;
+}
+
+.extraction-note {
+  border-left: 3px solid var(--amber);
 }
 
 .portfolio-meta-grid {
@@ -1375,6 +1460,10 @@ td {
 
   .app-shell {
     grid-template-columns: 180px minmax(0, 1fr);
+  }
+
+  .bulk-edit-table {
+    min-width: 1180px;
   }
 }
 
