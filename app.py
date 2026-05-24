@@ -698,6 +698,47 @@ def normalize_pdf_text(text):
     return "\n".join(line for line in lines if line.strip())
 
 
+def strip_ec_page_artifacts(text):
+    return re.sub(
+        r"\bEC\s+Identification\s+No\.?\s*[-:]\s*[^\n]*?\bPage\s+\d+\s+of\s+\d+\b",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+
+def slice_ec_conditions_section(text):
+    cleaned = normalize_pdf_text(text)
+    start_patterns = [
+        r"\b(?:[A-Z]\s*[\).:-]\s*)?Specific\s+Conditions?\b\s*[:\-\u2013\u2014]*",
+        r"\bconditions\s+listed\s+below\s*[:\-\u2013\u2014]*",
+    ]
+    start_index = 0
+    for pattern in start_patterns:
+        match = re.search(pattern, cleaned, flags=re.IGNORECASE)
+        if match:
+            start_index = match.end()
+            break
+
+    condition_text = cleaned[start_index:]
+    condition_text = re.sub(r"^\s*(?:[-\u2013\u2014:;]+|\b[A-Z]\s*[\).:-]\s*)+", "", condition_text)
+
+    stop_patterns = [
+        r"(?m)^\s*\([^)\n]{2,80}\)\s*$\n\s*(?:Member\s+Secretary|Chairman|Director|Secretary)\b",
+        r"(?m)^\s*A\s+copy\s+of\s+the\s+above\s+is\s+forwarded\b",
+        r"(?m)^\s*Copy\s+(?:to|forwarded)\b",
+    ]
+    stop_index = None
+    for pattern in stop_patterns:
+        match = re.search(pattern, condition_text, flags=re.IGNORECASE)
+        if match and match.start() > 200:
+            stop_index = match.start() if stop_index is None else min(stop_index, match.start())
+    if stop_index is not None:
+        condition_text = condition_text[:stop_index]
+
+    return condition_text.strip()
+
+
 def extract_pdf_text(file_path):
     reader = PdfReader(str(file_path))
     return "\n".join((page.extract_text() or "") for page in reader.pages)
@@ -711,12 +752,12 @@ def parse_issue_date_value(raw_text):
 
 
 def strip_report_headers(text):
-    cleaned = text
+    cleaned = strip_ec_page_artifacts(text)
     noisy_patterns = [
-        r"Project Name\s+.*?(?=(?:Environment Consultant|Project Proponent|Project Address|$))",
-        r"Project Proponent\s+.*?(?=(?:Environment Consultant|Project Address|$))",
-        r"Project Address\s+.*?(?=(?:Environment Consultant|$))",
-        r"Environment Consultant\s+.*?(?=(?:\d+\s|$))",
+        r"Project Name\s*[:\-]\s*.*?(?=(?:Environment Consultant|Project Proponent|Project Address|$))",
+        r"Project Proponent\s*[:\-]\s*.*?(?=(?:Environment Consultant|Project Address|$))",
+        r"Project Address\s*[:\-]\s*.*?(?=(?:Environment Consultant|$))",
+        r"Environment Consultant\s*[:\-]\s*.*?(?=(?:\d+\s|$))",
         r"Six Monthly Compliance report.*?(?=(?:Project Proponent|Project Address|$))",
     ]
     for pattern in noisy_patterns:
@@ -727,6 +768,18 @@ def strip_report_headers(text):
 
 def split_into_sentences(text):
     return [clean_text(part) for part in re.split(r"(?<=[.!?])\s+", text) if clean_text(part)]
+
+
+def looks_like_compliance_report_pdf(text):
+    leading_text = normalize_pdf_text(text)[:3000]
+    return bool(
+        re.search(
+            r"\b(?:six[-\s]*monthly|half[-\s]*yearly)\s+compliance\s+report\b",
+            leading_text,
+            flags=re.IGNORECASE,
+        )
+        or re.search(r"\bcompliance\s+status\s+report\b", leading_text, flags=re.IGNORECASE)
+    )
 
 
 def sentence_looks_like_condition(sentence):
@@ -845,10 +898,15 @@ def extract_ec_metadata(raw_text):
 
 def extract_condition_candidates(raw_text):
     text = normalize_pdf_text(raw_text)
-    report_like = bool(re.search(r"compliance report|six monthly compliance", text, flags=re.IGNORECASE))
+    condition_text = slice_ec_conditions_section(text)
+    report_like = looks_like_compliance_report_pdf(text)
     condition_blocks = []
-    for match in re.finditer(r"(?m)(?:^|\n)\s*(\d{1,3})\.\s+(.+?)(?=(?:\n\s*\d{1,3}\.\s)|\Z)", text, flags=re.DOTALL):
-        block = trim_condition_block(match.group(2), report_like=report_like)
+    item_pattern = (
+        r"(?m)(?:^|\n)\s*(?:\[\d{1,3}\]|\d{1,3}[\.\)]|[ivxlcdm]{1,8}\))\s+"
+        r"(.+?)(?=(?:\n\s*(?:\[\d{1,3}\]|\d{1,3}[\.\)]|[ivxlcdm]{1,8}\))\s+)|\Z)"
+    )
+    for match in re.finditer(item_pattern, condition_text, flags=re.DOTALL | re.IGNORECASE):
+        block = trim_condition_block(match.group(1), report_like=report_like)
         if not block:
             continue
         block = re.sub(r"\s+", " ", block).strip()
@@ -867,14 +925,11 @@ def extract_condition_candidates(raw_text):
             deduped.append(block)
         return deduped
 
-    sentences = [trim_condition_block(part, report_like=report_like) for part in re.split(r"\n+", text)]
+    sentences = [trim_condition_block(part, report_like=report_like) for part in re.split(r"\n+", condition_text)]
     return [sentence for sentence in sentences if len(sentence) > 40][:40]
 
 
 def build_default_action_from_condition(condition_text):
-    summary = " ".join(condition_text.split()[:18]).strip()
-    if summary:
-        return f"Review this EC condition and define the evidence / submission steps for: {summary}..."
     return ""
 
 
@@ -2906,7 +2961,7 @@ def review_ec_extraction(batch_id):
     items = fetch_extraction_batch_items(batch_id)
     extraction_mode = (
         "report_like"
-        if re.search(r"compliance report|six monthly compliance", batch["raw_text"] or "", flags=re.IGNORECASE)
+        if looks_like_compliance_report_pdf(batch["raw_text"] or "")
         else "letter_like"
     )
     return render_template(
