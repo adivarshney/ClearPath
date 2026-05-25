@@ -156,7 +156,7 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       <label><span>EC letter PDF</span><input type="file" name="ec_letter" accept=".pdf" required /></label>
       <button type="submit" class="secondary-button">Upload EC letter</button>
-      <p class="subtle-copy">Digital PDFs only for now. You’ll review and edit extracted conditions before import.</p>
+      <p class="subtle-copy">Digital PDFs are fastest. Good-quality scanned PDFs can be OCR-read when the server OCR engine is configured.</p>
     </form>
     <div class="divider-line"></div>
     {% endif %}

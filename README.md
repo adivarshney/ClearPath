@@ -180,6 +180,7 @@ Latest commit documented here includes the EC extraction preview workflow, extra
 - Imported conditions are tagged with extraction source and batch linkage for traceability
 - Report-style PDF detection in preview
 - Heuristic cleanup to keep leading directive condition text and trim common compliance-response wording
+- Optional OCR fallback for good-quality scanned PDFs when the server has `tesseract` installed
 
 ### Compliance Reports
 
@@ -277,6 +278,14 @@ python3 app.py
 - If `Approval Type` is not present, import can fall back to the selected approval context
 - Action / due date / schedule fields can be completed later
 
+## OCR Notes
+
+- Digital PDFs are parsed directly with `pypdf`
+- Scanned/image-only PDFs need OCR
+- Local OCR requires the native `tesseract` binary plus the Python packages in `requirements.txt`
+- On AWS, the recommended production path is either a container image with `tesseract` installed or managed OCR through Amazon Textract
+- OCR output still goes through the same review-before-import screen because government PDF quality varies heavily
+
 ## Release History
 
 ### v2.2.0
@@ -340,7 +349,7 @@ Initial MVP.
 ## Upcoming / Next Release Candidates
 
 - duplicate EC detection using reference number + issue date
-- OCR support for scanned approval letters
+- production OCR hardening for scanned approval letters
 - CTE / CTO extraction after EC matures further
 - configurable approval master data instead of only hardcoded defaults
 - stronger reports page with portfolio exports

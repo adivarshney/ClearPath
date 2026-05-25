@@ -2,6 +2,7 @@ import calendar
 import csv
 import os
 import re
+import shutil
 import sqlite3
 import uuid
 from datetime import date, datetime, timedelta
@@ -707,29 +708,36 @@ def strip_ec_page_artifacts(text):
     )
 
 
-def slice_ec_conditions_section(text):
+EC_CONDITION_START_PATTERNS = [
+    r"\b(?:[A-Z]\s*[\).:-]\s*)?Specific\s+Conditions?\b\s*[:\-\u2013\u2014]*",
+    r"\bconditions\s+listed\s+below\s*[:\-\u2013\u2014]*",
+]
+
+EC_CONDITION_STOP_PATTERNS = [
+    r"(?m)^\s*\([^)\n]{2,80}\)\s*$\n\s*(?:Member\s+Secretary|Chairman|Director|Secretary)\b",
+    r"(?m)^\s*A\s+copy\s+of\s+the\s+above\s+is\s+forwarded\b",
+    r"(?m)^\s*Copy\s+(?:to|forwarded)\b",
+]
+
+
+def find_ec_condition_start_index(text):
     cleaned = normalize_pdf_text(text)
-    start_patterns = [
-        r"\b(?:[A-Z]\s*[\).:-]\s*)?Specific\s+Conditions?\b\s*[:\-\u2013\u2014]*",
-        r"\bconditions\s+listed\s+below\s*[:\-\u2013\u2014]*",
-    ]
-    start_index = 0
-    for pattern in start_patterns:
+    for pattern in EC_CONDITION_START_PATTERNS:
         match = re.search(pattern, cleaned, flags=re.IGNORECASE)
         if match:
-            start_index = match.end()
-            break
+            return match.end()
+    return None
+
+
+def slice_ec_conditions_section(text):
+    cleaned = normalize_pdf_text(text)
+    start_index = find_ec_condition_start_index(cleaned) or 0
 
     condition_text = cleaned[start_index:]
     condition_text = re.sub(r"^\s*(?:[-\u2013\u2014:;]+|\b[A-Z]\s*[\).:-]\s*)+", "", condition_text)
 
-    stop_patterns = [
-        r"(?m)^\s*\([^)\n]{2,80}\)\s*$\n\s*(?:Member\s+Secretary|Chairman|Director|Secretary)\b",
-        r"(?m)^\s*A\s+copy\s+of\s+the\s+above\s+is\s+forwarded\b",
-        r"(?m)^\s*Copy\s+(?:to|forwarded)\b",
-    ]
     stop_index = None
-    for pattern in stop_patterns:
+    for pattern in EC_CONDITION_STOP_PATTERNS:
         match = re.search(pattern, condition_text, flags=re.IGNORECASE)
         if match and match.start() > 200:
             stop_index = match.start() if stop_index is None else min(stop_index, match.start())
@@ -739,9 +747,75 @@ def slice_ec_conditions_section(text):
     return condition_text.strip()
 
 
+def select_ec_condition_source_text(raw_text, page_texts=None):
+    if page_texts:
+        normalized_pages = [normalize_pdf_text(page_text) for page_text in page_texts]
+        for page_index, page_text in enumerate(normalized_pages):
+            if find_ec_condition_start_index(page_text) is not None:
+                return "\n".join(normalized_pages[page_index:])
+    return raw_text
+
+
 def extract_pdf_text(file_path):
     reader = PdfReader(str(file_path))
     return "\n".join((page.extract_text() or "") for page in reader.pages)
+
+
+def inspect_pdf_text_profile(file_path):
+    reader = PdfReader(str(file_path))
+    page_count = len(reader.pages)
+    text_parts = []
+    image_pages = 0
+    for page in reader.pages:
+        text_parts.append(page.extract_text() or "")
+        try:
+            if getattr(page, "images", None):
+                image_pages += 1
+        except Exception:
+            pass
+    return {
+        "page_count": page_count,
+        "text": "\n".join(text_parts),
+        "pages": text_parts,
+        "image_pages": image_pages,
+    }
+
+
+def local_ocr_available():
+    if shutil.which("tesseract") is None:
+        return False
+    try:
+        import fitz  # noqa: F401
+        import pytesseract  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
+def extract_scanned_pdf_pages(file_path, max_pages=20):
+    if not local_ocr_available():
+        raise RuntimeError("OCR engine is not configured.")
+
+    import fitz
+    import pytesseract
+    from PIL import Image
+
+    document = fitz.open(str(file_path))
+    page_text = []
+    for page_index, page in enumerate(document):
+        if page_index >= max_pages:
+            break
+        # 2x render keeps OCR readable without making upload requests painfully slow.
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+        image = Image.open(BytesIO(pixmap.tobytes("png")))
+        page_text.append(pytesseract.image_to_string(image, lang="eng"))
+    document.close()
+    return page_text
+
+
+def extract_scanned_pdf_text(file_path, max_pages=20):
+    page_text = extract_scanned_pdf_pages(file_path, max_pages=max_pages)
+    return "\n".join(page_text)
 
 
 def parse_issue_date_value(raw_text):
@@ -896,9 +970,10 @@ def extract_ec_metadata(raw_text):
     return metadata
 
 
-def extract_condition_candidates(raw_text):
+def extract_condition_candidates(raw_text, page_texts=None):
     text = normalize_pdf_text(raw_text)
-    condition_text = slice_ec_conditions_section(text)
+    condition_source_text = select_ec_condition_source_text(text, page_texts)
+    condition_text = slice_ec_conditions_section(condition_source_text)
     report_like = looks_like_compliance_report_pdf(text)
     condition_blocks = []
     item_pattern = (
@@ -2791,17 +2866,41 @@ def upload_ec_letter(project_id):
     file.save(save_path)
 
     try:
-        raw_text = normalize_pdf_text(extract_pdf_text(save_path))
+        pdf_profile = inspect_pdf_text_profile(save_path)
+        raw_text = normalize_pdf_text(pdf_profile["text"])
+        page_texts = pdf_profile["pages"]
     except Exception:
         flash("The EC PDF could not be read. Try a digital PDF or upload conditions via spreadsheet for now.", "error")
         return redirect(url_for("approval_detail", project_id=project_id, approval_type="EC"))
 
     if len(raw_text.strip()) < 40:
-        flash("Not enough readable text was found in this PDF. OCR/scanned PDF support will need a later phase.", "error")
-        return redirect(url_for("approval_detail", project_id=project_id, approval_type="EC"))
+        scanned_like = pdf_profile["page_count"] and pdf_profile["image_pages"] >= max(1, pdf_profile["page_count"] // 2)
+        if scanned_like:
+            try:
+                page_texts = extract_scanned_pdf_pages(save_path)
+                raw_text = normalize_pdf_text("\n".join(page_texts))
+            except RuntimeError:
+                flash(
+                    "This PDF is scanned/image-only. ClearPath can OCR good-quality scans once the OCR engine is configured on the server; for now, use a digital EC PDF or Excel import.",
+                    "error",
+                )
+                return redirect(url_for("approval_detail", project_id=project_id, approval_type="EC"))
+            except Exception:
+                flash(
+                    "This scanned PDF could not be OCR-read reliably. Try a clearer scan, a digital EC PDF, or Excel import.",
+                    "error",
+                )
+                return redirect(url_for("approval_detail", project_id=project_id, approval_type="EC"))
+
+        if len(raw_text.strip()) < 40:
+            flash(
+                "Not enough readable text was found in this PDF. Try a clearer scan, a digital EC PDF, or import conditions via spreadsheet.",
+                "error",
+            )
+            return redirect(url_for("approval_detail", project_id=project_id, approval_type="EC"))
 
     metadata = extract_ec_metadata(raw_text)
-    conditions = extract_condition_candidates(raw_text)
+    conditions = extract_condition_candidates(raw_text, page_texts)
     if not conditions:
         flash("The EC PDF text was read, but no conditions could be identified for preview.", "error")
         return redirect(url_for("approval_detail", project_id=project_id, approval_type="EC"))
